@@ -106,9 +106,9 @@ export class OverpassService {
     // Calculate from geometry
     if (element.geometry && element.geometry.length > 0) {
       try {
-        const lats = element.geometry.map((p) => p.lat).filter(lat => typeof lat === 'number' && !isNaN(lat))
-        const lons = element.geometry.map((p) => p.lon).filter(lon => typeof lon === 'number' && !isNaN(lon))
-        
+        const lats = element.geometry.map((p) => p.lat).filter((lat) => typeof lat === 'number' && !isNaN(lat))
+        const lons = element.geometry.map((p) => p.lon).filter((lon) => typeof lon === 'number' && !isNaN(lon))
+
         if (lats.length > 0 && lons.length > 0) {
           return {
             lat: (Math.min(...lats) + Math.max(...lats)) / 2,
@@ -127,15 +127,15 @@ export class OverpassService {
   private buildQuery(bbox: BoundingBox): string {
     const query = `[out:json][timeout:180][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
 (
-  way[natural~"^(forest|wood|beach|wetland|peak|cave_entrance|glacier)$"];
-  relation[natural~"^(forest|wood|beach|wetland|peak|cave_entrance|glacier)$"];
-  node[natural~"^(peak|cave_entrance|glacier)$"];
-  way[leisure~"^(park|nature_reserve)$"];
-  relation[leisure~"^(park|nature_reserve)$"];
+  way[natural~"^(forest|wood|beach|wetland|glacier|desert|geologic_formation|island|waterfall|mountain)$"];
+  relation[natural~"^(forest|wood|beach|wetland|glacier|desert|geologic_formation|island|waterfall|mountain)$"];
+  node[natural~"^(peak|cave_entrance|hot_spring)$"];
+  way[leisure~"^(park|nature_reserve|botanical_garden)$"];
+  relation[leisure~"^(park|nature_reserve|botanical_garden)$"];
   way[boundary~"^(national_park|protected_area)$"];
   relation[boundary~"^(national_park|protected_area)$"];
-  way[waterway~"^(river|stream)$"];
-  relation[waterway~"^(river|stream)$"];
+  way[waterway~"^(river|stream|canal)$"];
+  relation[waterway~"^(river|stream|canal)$"];
 );
 out center geom;`
     return query
@@ -153,15 +153,15 @@ out center geom;`
 
   private async loadFromCache(departmentCode?: string): Promise<OverpassElement[] | null> {
     if (!departmentCode) return null
-    
+
     const fileName = `overpass_dept_${departmentCode}.json`
     const filePath = path.join(this.cacheDir, fileName)
-    
+
     try {
       await fs.access(filePath)
       console.log(`♻️  Found cached Overpass data for department ${departmentCode}: ${fileName}`)
       console.log(`📁 Reusing existing data to save API calls`)
-      
+
       const data = await fs.readFile(filePath, 'utf-8')
       const elements = JSON.parse(data)
       return elements
@@ -173,10 +173,10 @@ out center geom;`
 
   private async saveToCache(elements: OverpassElement[], departmentCode?: string): Promise<void> {
     if (!departmentCode) return
-    
+
     const fileName = `overpass_dept_${departmentCode}.json`
     const filePath = path.join(this.cacheDir, fileName)
-    
+
     try {
       await fs.writeFile(filePath, JSON.stringify(elements, null, 2))
       console.log(`💾 Cached Overpass data: ${fileName}`)
@@ -231,7 +231,7 @@ out center geom;`
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
 
-        const data = await response.json() as OverpassResponse
+        const data = (await response.json()) as OverpassResponse
         console.log(`🌍 Successfully fetched ${data.elements.length} elements`)
 
         // Save to cache for future use
@@ -264,25 +264,26 @@ out center geom;`
       if (element.type === 'node') {
         return {
           type: 'Point',
-          coordinates: [element.lon, element.lat]
+          coordinates: [element.lon, element.lat],
         }
       } else if (element.type === 'way') {
-        const coordinates = element.geometry.map(point => [point.lon, point.lat])
-        
+        const coordinates = element.geometry.map((point) => [point.lon, point.lat])
+
         // Check if it's a closed polygon (first and last points are the same)
-        const isClosedPolygon = coordinates.length > 3 && 
+        const isClosedPolygon =
+          coordinates.length > 3 &&
           coordinates[0][0] === coordinates[coordinates.length - 1][0] &&
           coordinates[0][1] === coordinates[coordinates.length - 1][1]
-        
+
         if (isClosedPolygon) {
           return {
             type: 'Polygon',
-            coordinates: [coordinates]
+            coordinates: [coordinates],
           }
         } else {
           return {
             type: 'LineString',
-            coordinates: coordinates
+            coordinates: coordinates,
           }
         }
       } else if (element.type === 'relation') {
@@ -291,7 +292,7 @@ out center geom;`
         if (center) {
           return {
             type: 'Point',
-            coordinates: [center.lon, center.lat]
+            coordinates: [center.lon, center.lat],
           }
         }
       }
