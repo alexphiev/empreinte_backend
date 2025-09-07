@@ -1,0 +1,5 @@
+# Overture Maps dependencies
+overturemaps>=0.7.0
+duckdb>=0.9.0
+geopandas>=0.14.0
+pyarrow>=13.0.0

@@ -14,7 +14,14 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --ext .ts,.tsx",
-    "lint:fix": "eslint . --ext .ts,.tsx --fix"
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "fetch-osm-places": "ts-node src/scripts/fetch-osm-places.ts",
+    "fetch-overture-places": "ts-node src/scripts/fetch-overture-places.ts",
+    "remove-osm-places": "ts-node src/scripts/remove-osm-places.ts",
+    "remove-overture-places": "ts-node src/scripts/remove-overture-places.ts",
+    "clear-osm-cache": "./clear-osm-cache.sh",
+    "clear-overture-cache": "./clear-overture-cache.sh",
+    "supabase:types": "supabase gen types typescript --project-id ydtttobvqajzglvdcqas > src/types/database.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.2",

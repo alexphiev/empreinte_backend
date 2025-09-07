@@ -45,6 +45,9 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Python virtual environment
+venv_overture/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -147,3 +150,4 @@ dist
 cypress/screenshots
 /notes
 CLAUDE.md
+/temp
