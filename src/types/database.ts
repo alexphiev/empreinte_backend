@@ -24,6 +24,7 @@ export type Database = {
           location: unknown
           metadata: Json | null
           name: string | null
+          quality: number
           region: string | null
           source: string | null
           source_id: string | null
@@ -39,6 +40,7 @@ export type Database = {
           location: unknown
           metadata?: Json | null
           name?: string | null
+          quality?: number
           region?: string | null
           source?: string | null
           source_id?: string | null
@@ -54,6 +56,7 @@ export type Database = {
           location?: unknown
           metadata?: Json | null
           name?: string | null
+          quality?: number
           region?: string | null
           source?: string | null
           source_id?: string | null
@@ -178,7 +181,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      places_in_view: {
+        Args: {
+          max_lat: number
+          max_long: number
+          min_lat: number
+          min_long: number
+        }
+        Returns: {
+          description: string
+          id: string
+          lat: number
+          long: number
+          name: string
+          source: string
+          type: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

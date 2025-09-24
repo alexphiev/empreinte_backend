@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { supabase } from '../services/supabase'
-import { getDepartmentByCode } from '../data/departments'
+import { getDepartmentByCode } from '../data/department.data'
+import { supabase } from '../services/supabase.service'
 
 interface RemovalStats {
   removedCount: number
@@ -15,7 +15,7 @@ class OSMRemover {
     this.stats = {
       removedCount: 0,
       errorCount: 0,
-      startTime: new Date()
+      startTime: new Date(),
     }
   }
 
@@ -36,7 +36,7 @@ class OSMRemover {
     }
 
     console.log(`\n🗑️ Removing OSM places for ${department.name} (${departmentCode})`)
-    
+
     try {
       const { data: places, error: fetchError } = await supabase
         .from('places')
@@ -70,7 +70,6 @@ class OSMRemover {
       this.stats.removedCount = places.length
       this.printStats(`${department.name} (${departmentCode})`)
       console.log(`✅ Successfully removed ${places.length} OSM places from ${department.name}`)
-
     } catch (error) {
       console.error(`💥 Error removing OSM places for ${department.name}:`, error)
       throw error
@@ -80,12 +79,9 @@ class OSMRemover {
   public async removeAllOSM(): Promise<void> {
     console.log(`\n🗑️ Removing ALL OSM places from database`)
     console.log('⚠️ WARNING: This will remove ALL OSM places from the database!')
-    
+
     try {
-      const { count } = await supabase
-        .from('places')
-        .select('*', { count: 'exact', head: true })
-        .eq('source', 'OSM')
+      const { count } = await supabase.from('places').select('*', { count: 'exact', head: true }).eq('source', 'OSM')
 
       if (!count || count === 0) {
         console.log('❓ No OSM places found in database')
@@ -94,10 +90,7 @@ class OSMRemover {
 
       console.log(`🔍 Found ${count} OSM places to remove`)
 
-      const { error } = await supabase
-        .from('places')
-        .delete()
-        .eq('source', 'OSM')
+      const { error } = await supabase.from('places').delete().eq('source', 'OSM')
 
       if (error) {
         console.error('❌ Error removing places:', error.message)
@@ -108,7 +101,6 @@ class OSMRemover {
       this.stats.removedCount = count
       this.printStats('All France')
       console.log(`✅ Successfully removed ${count} OSM places from database`)
-
     } catch (error) {
       console.error('💥 Error removing all OSM places:', error)
       throw error
@@ -122,9 +114,9 @@ async function main() {
 
   console.log(`🚀 Starting OSM Places Remover`)
   console.log(`📅 Started at: ${new Date().toISOString()}`)
-  
+
   const remover = new OSMRemover()
-  
+
   try {
     if (command === 'all') {
       await remover.removeAllOSM()
@@ -140,7 +132,7 @@ async function main() {
       console.log('  pnpm run remove-osm-places all # Remove all OSM places')
       process.exit(1)
     }
-    
+
     console.log('\n🎉 OSM removal completed successfully!')
     console.log(`📅 Finished at: ${new Date().toISOString()}`)
   } catch (error) {

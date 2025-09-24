@@ -1,0 +1,55 @@
+export const OSM_TAG_TO_TYPE: Record<string, Record<string, string>> = {
+  natural: {
+    forest: 'forest',
+    wood: 'wood',
+    beach: 'beach',
+    water: 'water',
+    peak: 'mountain',
+    cave_entrance: 'cave_entrance',
+    glacier: 'glacier',
+    wetland: 'wetland',
+    grassland: 'grassland',
+    heath: 'heath',
+    scrub: 'scrub',
+    bare_rock: 'bare_rock',
+    sand: 'sand',
+    scree: 'scree',
+    cliff: 'cliff',
+    valley: 'valley',
+  },
+  leisure: {
+    park: 'park',
+    nature_reserve: 'nature_reserve',
+    garden: 'garden',
+    botanical_garden: 'botanical_garden',
+  },
+  boundary: {
+    national_park: 'national_park',
+    protected_area: 'protected_area',
+  },
+  waterway: {
+    river: 'river',
+    stream: 'stream',
+    canal: 'canal',
+  },
+  building: {
+    public: 'public_building',
+  },
+  tourism: {
+    information: 'information_point',
+    viewpoint: 'viewpoint',
+    camp_site: 'camp_site',
+    picnic_site: 'picnic_site',
+  },
+  landuse: {
+    forest: 'forest',
+    recreation_ground: 'recreation_ground',
+    conservation: 'conservation_area',
+    protected_area: 'protected_area',
+  },
+  place: {
+    island: 'island',
+    hamlet: 'hamlet',
+    village: 'village',
+  },
+}

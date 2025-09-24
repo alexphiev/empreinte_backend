@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { supabase } from '../services/supabase'
-import { getDepartmentByCode } from '../data/departments'
+import { getDepartmentByCode } from '../data/department.data'
+import { supabase } from '../services/supabase.service'
 
 interface RemovalStats {
   removedCount: number
@@ -15,7 +15,7 @@ class OvertureRemover {
     this.stats = {
       removedCount: 0,
       errorCount: 0,
-      startTime: new Date()
+      startTime: new Date(),
     }
   }
 
@@ -36,7 +36,7 @@ class OvertureRemover {
     }
 
     console.log(`\n🗑️ Removing Overture places for ${department.name} (${departmentCode})`)
-    
+
     try {
       const { data: places, error: fetchError } = await supabase
         .from('places')
@@ -70,7 +70,6 @@ class OvertureRemover {
       this.stats.removedCount = places.length
       this.printStats(`${department.name} (${departmentCode})`)
       console.log(`✅ Successfully removed ${places.length} Overture places from ${department.name}`)
-
     } catch (error) {
       console.error(`💥 Error removing Overture places for ${department.name}:`, error)
       throw error
@@ -80,7 +79,7 @@ class OvertureRemover {
   public async removeAllOverture(): Promise<void> {
     console.log(`\n🗑️ Removing ALL Overture places from database`)
     console.log('⚠️ WARNING: This will remove ALL Overture places from the database!')
-    
+
     try {
       const { count } = await supabase
         .from('places')
@@ -94,10 +93,7 @@ class OvertureRemover {
 
       console.log(`🔍 Found ${count} Overture places to remove`)
 
-      const { error } = await supabase
-        .from('places')
-        .delete()
-        .eq('source', 'OVERTURE')
+      const { error } = await supabase.from('places').delete().eq('source', 'OVERTURE')
 
       if (error) {
         console.error('❌ Error removing places:', error.message)
@@ -108,7 +104,6 @@ class OvertureRemover {
       this.stats.removedCount = count
       this.printStats('All France')
       console.log(`✅ Successfully removed ${count} Overture places from database`)
-
     } catch (error) {
       console.error('💥 Error removing all Overture places:', error)
       throw error
@@ -122,9 +117,9 @@ async function main() {
 
   console.log(`🚀 Starting Overture Places Remover`)
   console.log(`📅 Started at: ${new Date().toISOString()}`)
-  
+
   const remover = new OvertureRemover()
-  
+
   try {
     if (command === 'all') {
       await remover.removeAllOverture()
@@ -140,7 +135,7 @@ async function main() {
       console.log('  pnpm run remove-overture-places all # Remove all Overture places')
       process.exit(1)
     }
-    
+
     console.log('\n🎉 Overture removal completed successfully!')
     console.log(`📅 Finished at: ${new Date().toISOString()}`)
   } catch (error) {

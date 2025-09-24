@@ -1,8 +1,7 @@
 import { spawn } from 'child_process'
-import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
-import { OVERTURE_CATEGORIES } from '../data/overture_categories'
+import { OVERTURE_CATEGORIES } from '../data/overture.data'
 
 interface BoundingBox {
   south: number
@@ -63,7 +62,7 @@ export class OvertureService {
   private normalizeCategory(categories: any): string {
     const primary = categories?.primary || ''
     const alternates = categories?.alternate || []
-    
+
     // Nature and outdoor recreation categories
     if (primary.includes('national_park')) return 'national_park'
     if (primary.includes('state_park')) return 'state_park'
@@ -77,13 +76,13 @@ export class OvertureService {
     if (primary.includes('boating')) return 'boating'
     if (primary.includes('rafting') || primary.includes('kayaking')) return 'water_sports'
     if (primary.includes('sailing')) return 'sailing'
-    
+
     // Check alternates for additional context
     for (const alt of alternates) {
       if (alt.includes('nature') || alt.includes('outdoor')) return 'nature_area'
       if (alt.includes('recreation')) return 'recreation_area'
     }
-    
+
     return primary.split('.').pop() || 'unknown'
   }
 
@@ -91,22 +90,22 @@ export class OvertureService {
     const categories = place.properties.categories
     const primary = categories?.primary || ''
     const alternates = categories?.alternate || []
-    
+
     // Check if primary category matches any of our selected nature categories
     if (OVERTURE_CATEGORIES.includes(primary)) {
       return true
     }
-    
+
     // Check if any alternate category matches our selected nature categories
     return alternates.some((alt: string) => OVERTURE_CATEGORIES.includes(alt))
   }
 
   public async downloadPlaces(bbox: BoundingBox, departmentCode?: string): Promise<string> {
-    const fileName = departmentCode 
+    const fileName = departmentCode
       ? `overture_places_dept_${departmentCode}.geojson`
       : `overture_places_${Date.now()}.geojson`
     const filePath = path.join(this.tempDir, fileName)
-    
+
     // Check if file already exists
     try {
       await fs.access(filePath)
@@ -116,40 +115,42 @@ export class OvertureService {
     } catch {
       // File doesn't exist, proceed with download
     }
-    
+
     console.log(`🌍 Downloading Overture places for bbox: ${bbox.west},${bbox.south},${bbox.east},${bbox.north}`)
     if (departmentCode) {
       console.log(`📂 Will cache as: ${fileName}`)
     }
-    
+
     return new Promise((resolve, reject) => {
       const args = [
         'download',
         `--bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}`,
-        '-f', 'geojson',
+        '-f',
+        'geojson',
         '--type=place',
-        '-o', filePath
+        '-o',
+        filePath,
       ]
-      
+
       console.log(`🐍 Running: overturemaps ${args.join(' ')}`)
-      
+
       // Use bash to activate virtual environment and run overturemaps
       const venvPath = path.join(process.cwd(), 'venv_overture', 'bin', 'activate')
       const command = `source ${venvPath} && overturemaps ${args.join(' ')}`
-      
+
       const childProcess = spawn('bash', ['-c', command])
-      
+
       let stdout = ''
       let stderr = ''
-      
+
       childProcess.stdout.on('data', (data) => {
         stdout += data.toString()
       })
-      
+
       childProcess.stderr.on('data', (data) => {
         stderr += data.toString()
       })
-      
+
       childProcess.on('close', (code) => {
         if (code === 0) {
           console.log(`✅ Downloaded to: ${filePath}`)
@@ -161,7 +162,7 @@ export class OvertureService {
           reject(new Error(`Overture download failed: ${stderr}`))
         }
       })
-      
+
       childProcess.on('error', (error) => {
         console.error(`❌ Failed to start overturemaps CLI:`, error)
         reject(error)
@@ -169,38 +170,40 @@ export class OvertureService {
     })
   }
 
-  public async processGeoJSON(filePath: string): Promise<Array<{
-    overture_id: string
-    name: string
-    type: string
-    latitude: number
-    longitude: number
-    geometry: any
-    confidence: number
-    metadata: any
-  }>> {
+  public async processGeoJSON(filePath: string): Promise<
+    Array<{
+      overture_id: string
+      name: string
+      type: string
+      latitude: number
+      longitude: number
+      geometry: any
+      confidence: number
+      metadata: any
+    }>
+  > {
     try {
       console.log(`📋 Processing GeoJSON file: ${filePath}`)
-      
+
       const data = await fs.readFile(filePath, 'utf-8')
       const geoJson = JSON.parse(data)
-      
+
       if (!geoJson.features || !Array.isArray(geoJson.features)) {
         throw new Error('Invalid GeoJSON format')
       }
-      
+
       console.log(`🔍 Found ${geoJson.features.length} total places`)
-      
+
       const naturePlaces = geoJson.features
         .filter((feature: any) => this.isNaturePlace(feature))
         .map((feature: any) => {
           const props = feature.properties
           const coords = feature.geometry.coordinates
-          
+
           // Get center point based on geometry type
           let lat: number, lon: number
           if (feature.geometry.type === 'Point') {
-            [lon, lat] = coords
+            ;[lon, lat] = coords
           } else if (feature.geometry.type === 'Polygon') {
             // Calculate centroid of polygon
             const flatCoords = coords[0]
@@ -216,12 +219,13 @@ export class OvertureService {
             lat = lats.reduce((a: number, b: number) => a + b, 0) / lats.length
             lon = lons.reduce((a: number, b: number) => a + b, 0) / lons.length
           }
-          
-          const primaryName = props.names?.primary || 
-                             props.names?.common?.en ||
-                             props.names?.common?.fr ||
-                             Object.values(props.names?.common || {})[0] as string
-          
+
+          const primaryName =
+            props.names?.primary ||
+            props.names?.common?.en ||
+            props.names?.common?.fr ||
+            (Object.values(props.names?.common || {})[0] as string)
+
           return {
             overture_id: props.id,
             name: primaryName || 'Unnamed',
@@ -235,14 +239,14 @@ export class OvertureService {
               addresses: props.addresses,
               websites: props.websites,
               phones: props.phones,
-              brand: props.brand
-            }
+              brand: props.brand,
+            },
           }
         })
         .filter((place: { name: string }) => place.name !== 'Unnamed') // Only include named places
-      
+
       console.log(`🌿 Filtered to ${naturePlaces.length} nature places`)
-      
+
       // Don't delete the temp file - keep it for caching
       // Only delete files that are timestamp-based (not department-specific)
       if (path.basename(filePath).includes('_dept_')) {
@@ -252,9 +256,8 @@ export class OvertureService {
           console.warn(`⚠️ Could not delete temp file: ${filePath}`)
         })
       }
-      
+
       return naturePlaces
-      
     } catch (error) {
       console.error(`❌ Error processing GeoJSON:`, error)
       throw error

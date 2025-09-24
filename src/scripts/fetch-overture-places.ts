@@ -1,7 +1,7 @@
 import 'dotenv/config'
-import { supabase } from '../services/supabase'
-import { overtureService } from '../services/overture'
-import { getDepartmentByCode, FRANCE_BBOX } from '../data/departments'
+import { FRANCE_BBOX, getDepartmentByCode } from '../data/department.data'
+import { overtureService } from '../services/overture.service'
+import { supabase } from '../services/supabase.service'
 
 interface ProcessStats {
   processedCount: number
@@ -20,13 +20,11 @@ class OvertureNaturePlacesFetcher {
       insertedCount: 0,
       duplicateCount: 0,
       errorCount: 0,
-      startTime: new Date()
+      startTime: new Date(),
     }
   }
 
-
   private preparePlace(place: any, region: string): any {
-
     return {
       source: 'OVERTURE',
       source_id: `overture:${place.overture_id}`,
@@ -37,7 +35,7 @@ class OvertureNaturePlacesFetcher {
       region: region,
       country: 'France',
       description: place.metadata?.description || null,
-      metadata: place
+      metadata: place,
     }
   }
 
@@ -45,18 +43,16 @@ class OvertureNaturePlacesFetcher {
     if (places.length === 0) return
 
     try {
-      const { error } = await supabase
-        .from('places')
-        .upsert(places, {
-          onConflict: 'source_id'
-        })
-      
+      const { error } = await supabase.from('places').upsert(places, {
+        onConflict: 'source_id',
+      })
+
       if (error) {
         console.error('❌ Error upserting batch:', error.message)
         this.stats.errorCount += places.length
         throw error
       }
-      
+
       console.log(`✅ Upserted batch of ${places.length} places`)
       this.stats.insertedCount += places.length
     } catch (error) {
@@ -65,7 +61,6 @@ class OvertureNaturePlacesFetcher {
       throw error
     }
   }
-
 
   private printProgress(region: string): void {
     const runtime = Math.floor((Date.now() - this.stats.startTime.getTime()) / 1000)
@@ -87,17 +82,19 @@ class OvertureNaturePlacesFetcher {
     }
 
     console.log(`\\n🏔️ Starting Overture fetch for ${department.name} (${departmentCode})`)
-    console.log(`📍 Bounding box: West=${department.bbox.west}, South=${department.bbox.south}, East=${department.bbox.east}, North=${department.bbox.north}`)
+    console.log(
+      `📍 Bounding box: West=${department.bbox.west}, South=${department.bbox.south}, East=${department.bbox.east}, North=${department.bbox.north}`,
+    )
 
     try {
       // Download places from Overture Maps
       console.log('🐍 Downloading places from Overture Maps...')
       const filePath = await overtureService.downloadPlaces(department.bbox, departmentCode)
-      
+
       // Process the downloaded GeoJSON
       console.log('📋 Processing downloaded data...')
       const places = await overtureService.processGeoJSON(filePath)
-      
+
       if (places.length === 0) {
         console.log('❓ No nature places found in this department')
         return
@@ -106,7 +103,7 @@ class OvertureNaturePlacesFetcher {
       console.log(`🌿 Processing ${places.length} nature places...`)
 
       // Prepare all places for batch upsert
-      const preparedPlaces = places.map(place => {
+      const preparedPlaces = places.map((place) => {
         this.stats.processedCount++
         return this.preparePlace(place, departmentCode)
       })
@@ -116,15 +113,16 @@ class OvertureNaturePlacesFetcher {
       for (let i = 0; i < preparedPlaces.length; i += batchSize) {
         const batch = preparedPlaces.slice(i, i + batchSize)
         await this.upsertPlacesBatch(batch)
-        
+
         // Progress reporting
-        console.log(`📊 Progress: ${Math.min(i + batchSize, preparedPlaces.length)}/${preparedPlaces.length} places processed`)
+        console.log(
+          `📊 Progress: ${Math.min(i + batchSize, preparedPlaces.length)}/${preparedPlaces.length} places processed`,
+        )
       }
 
       // Final report
       this.printProgress(`${department.name} (${departmentCode})`)
       console.log(`🏆 Completed ${department.name} (${departmentCode}) successfully!`)
-      
     } catch (error) {
       console.error(`💥 Error processing ${department.name}:`, error)
       throw error
@@ -133,8 +131,10 @@ class OvertureNaturePlacesFetcher {
 
   public async fetchAllFrance(): Promise<void> {
     console.log(`\\n🇫🇷 Starting Overture fetch for ALL FRANCE`)
-    console.log(`📍 Bounding box: West=${FRANCE_BBOX.west}, South=${FRANCE_BBOX.south}, East=${FRANCE_BBOX.east}, North=${FRANCE_BBOX.north}`)
-    
+    console.log(
+      `📍 Bounding box: West=${FRANCE_BBOX.west}, South=${FRANCE_BBOX.south}, East=${FRANCE_BBOX.east}, North=${FRANCE_BBOX.north}`,
+    )
+
     console.log('⚠️ WARNING: This will download ALL nature places in France')
     console.log('💡 Consider using department-by-department approach for better control')
 
@@ -142,11 +142,11 @@ class OvertureNaturePlacesFetcher {
       // Download places from Overture Maps
       console.log('🐍 Downloading ALL France places from Overture Maps...')
       const filePath = await overtureService.downloadPlaces(FRANCE_BBOX, 'france')
-      
+
       // Process the downloaded GeoJSON
       console.log('📋 Processing downloaded data...')
       const places = await overtureService.processGeoJSON(filePath)
-      
+
       if (places.length === 0) {
         console.log('❓ No nature places found in France')
         return
@@ -155,7 +155,7 @@ class OvertureNaturePlacesFetcher {
       console.log(`🌿 Processing ${places.length} nature places across France...`)
 
       // Prepare all places for batch upsert
-      const preparedPlaces = places.map(place => {
+      const preparedPlaces = places.map((place) => {
         this.stats.processedCount++
         return this.preparePlace(place, 'France')
       })
@@ -165,17 +165,18 @@ class OvertureNaturePlacesFetcher {
       for (let i = 0; i < preparedPlaces.length; i += batchSize) {
         const batch = preparedPlaces.slice(i, i + batchSize)
         await this.upsertPlacesBatch(batch)
-        
+
         // Progress reporting every 1000 items for bulk operation
         if ((i + batchSize) % 1000 === 0 || i + batchSize >= preparedPlaces.length) {
-          console.log(`📊 Progress: ${Math.min(i + batchSize, preparedPlaces.length)}/${preparedPlaces.length} places processed`)
+          console.log(
+            `📊 Progress: ${Math.min(i + batchSize, preparedPlaces.length)}/${preparedPlaces.length} places processed`,
+          )
         }
       }
 
       // Final report
       this.printProgress('France (All)')
       console.log(`🏆 Completed ALL FRANCE successfully!`)
-      
     } catch (error) {
       console.error(`💥 Error processing France:`, error)
       throw error
@@ -191,9 +192,9 @@ async function main() {
 
   console.log(`🚀 Starting Overture Nature Places Fetcher`)
   console.log(`📅 Started at: ${new Date().toISOString()}`)
-  
+
   const fetcher = new OvertureNaturePlacesFetcher()
-  
+
   try {
     if (command === 'all' || command === 'france') {
       await fetcher.fetchAllFrance()
@@ -203,7 +204,7 @@ async function main() {
       // Default to Gard department
       await fetcher.fetchDepartment('30')
     }
-    
+
     console.log('\\n🎉 Overture fetch completed successfully!')
     console.log(`📅 Finished at: ${new Date().toISOString()}`)
   } catch (error) {

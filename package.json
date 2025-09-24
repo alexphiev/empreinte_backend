@@ -17,6 +17,7 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "fetch-osm-places": "ts-node src/scripts/fetch-osm-places.ts",
     "fetch-overture-places": "ts-node src/scripts/fetch-overture-places.ts",
+    "fetch-french-parks": "ts-node src/scripts/fetch-french-natural-parks.ts",
     "remove-osm-places": "ts-node src/scripts/remove-osm-places.ts",
     "remove-overture-places": "ts-node src/scripts/remove-overture-places.ts",
     "clear-osm-cache": "./clear-osm-cache.sh",
