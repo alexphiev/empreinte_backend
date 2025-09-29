@@ -1,4 +1,4 @@
-import { OSM_TAG_TO_TYPE } from '@/data/osm.data'
+import { OSM_TAG_TO_TYPE } from '../data/osm.data'
 import { CacheManager, createCacheManager } from '../utils/cache'
 import { delay } from '../utils/common'
 import {
@@ -91,7 +91,7 @@ export class OverpassService {
   private mapTagsToType(tags: Record<string, string>): string {
     // Handle special cases first
     if (tags.landuse === 'protected_area' && tags.boundary_title?.includes('parc naturel régional')) {
-      return 'regional_natural_park'
+      return 'regional_park'
     }
 
     // Special building cases with name context
@@ -382,7 +382,7 @@ out center geom;`
     return []
   }
 
-  private convertToGeoJSON(element: OverpassElement): any {
+  public convertToGeoJSON(element: OverpassElement): any {
     try {
       // Convert Overpass geometry to GeoJSON format
       if (element.type === 'node' && element.lon && element.lat) {
@@ -577,6 +577,86 @@ out center geom;`
 
   public getRequestCount(): number {
     return this.requestCount
+  }
+
+  /**
+   * Query Overpass API for specific OSM elements by their IDs
+   * Supports batch queries for efficient data retrieval
+   */
+  public async queryByIds(ids: number[], batchSize = 15): Promise<OverpassElement[]> {
+    const results: OverpassElement[] = []
+
+    // Split IDs into batches to avoid query size limits
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize)
+
+      try {
+        console.log(`🔍 Querying batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(ids.length / batchSize)} with ${batch.length} IDs`)
+
+        const batchResults = await this.queryBatchIds(batch)
+        results.push(...batchResults)
+
+        console.log(`✅ Batch completed: found ${batchResults.length}/${batch.length} elements`)
+      } catch (error) {
+        console.error(`❌ Failed to query batch ${Math.floor(i / batchSize) + 1}:`, error)
+        console.log(`📝 Failed IDs: ${batch.join(', ')}`)
+      }
+    }
+
+    return results
+  }
+
+  /**
+   * Query a single batch of OSM IDs
+   */
+  private async queryBatchIds(ids: number[]): Promise<OverpassElement[]> {
+    await this.waitForRateLimit()
+
+    // Build query for specific IDs
+    const query = this.buildIdQuery(ids)
+    const currentUrl = this.baseUrls[this.currentUrlIndex]
+
+    console.log(`🌐 Querying Overpass API...`)
+    console.log(`📍 URL: ${currentUrl}`)
+    console.log(`🔢 Request count: ${++this.requestCount}`)
+
+    const response = await fetch(currentUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'empreinte-backend/1.0.0',
+      },
+      body: `data=${encodeURIComponent(query)}`,
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const data = await response.json() as OverpassResponse
+
+    if (!data.elements || !Array.isArray(data.elements)) {
+      console.warn('⚠️ No elements found in response')
+      return []
+    }
+
+    return data.elements
+  }
+
+  /**
+   * Build Overpass query for specific OSM element IDs
+   */
+  private buildIdQuery(ids: number[]): string {
+    // Group IDs by type (we don't know the type, so query all types)
+    const idList = ids.join(',')
+
+    return `[out:json][timeout:180];
+(
+  relation(id:${idList});
+  way(id:${idList});
+  node(id:${idList});
+);
+out geom;`
   }
 }
 

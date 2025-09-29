@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { supabase } from '../services/supabase.service'
+import { transformGeometry } from './geometry'
 
 export interface ProcessStats {
   processedCount: number
@@ -16,7 +17,7 @@ export interface CacheOptions {
 }
 
 export interface BatchUpsertOptions {
-  tableName: string
+  tableName: 'places' | 'saved_places' | 'search_history'
   conflictColumn: string
   batchSize?: number
 }
@@ -70,7 +71,7 @@ export async function ensureCacheDir(options: CacheOptions = {}): Promise<string
 /**
  * Performs batch upsert operations with error handling and progress tracking
  */
-export async function batchUpsert<T>(items: T[], options: BatchUpsertOptions, stats: ProcessStats): Promise<void> {
+export async function batchUpsert(items: any[], options: BatchUpsertOptions, stats: ProcessStats): Promise<void> {
   const { tableName, conflictColumn, batchSize = 100 } = options
 
   if (items.length === 0) return
@@ -111,14 +112,17 @@ export function calculateGeometryCenter(geometry: any): { lat: number; lon: numb
   if (!geometry) return null
 
   try {
-    if (geometry.type === 'Point') {
+    // Transform geometry to lat/lon if it's in a projected coordinate system
+    const transformedGeometry = transformGeometry(geometry)
+
+    if (transformedGeometry.type === 'Point') {
       return {
-        lon: geometry.coordinates[0],
-        lat: geometry.coordinates[1],
+        lon: transformedGeometry.coordinates[0],
+        lat: transformedGeometry.coordinates[1],
       }
-    } else if (geometry.type === 'Polygon' && geometry.coordinates[0]) {
+    } else if (transformedGeometry.type === 'Polygon' && transformedGeometry.coordinates[0]) {
       // Calculate centroid of polygon
-      const coords = geometry.coordinates[0]
+      const coords = transformedGeometry.coordinates[0]
       const lons = coords
         .map((coord: number[]) => coord[0])
         .filter((lon: number) => typeof lon === 'number' && !isNaN(lon))
@@ -132,9 +136,9 @@ export function calculateGeometryCenter(geometry: any): { lat: number; lon: numb
           lat: (Math.min(...lats) + Math.max(...lats)) / 2,
         }
       }
-    } else if (geometry.type === 'MultiPolygon' && geometry.coordinates[0]) {
+    } else if (transformedGeometry.type === 'MultiPolygon' && transformedGeometry.coordinates[0]) {
       // Use first polygon for center calculation
-      const coords = geometry.coordinates[0][0]
+      const coords = transformedGeometry.coordinates[0][0]
       const lons = coords
         .map((coord: number[]) => coord[0])
         .filter((lon: number) => typeof lon === 'number' && !isNaN(lon))
@@ -148,9 +152,9 @@ export function calculateGeometryCenter(geometry: any): { lat: number; lon: numb
           lat: (Math.min(...lats) + Math.max(...lats)) / 2,
         }
       }
-    } else if (geometry.type === 'LineString' && geometry.coordinates.length > 0) {
+    } else if (transformedGeometry.type === 'LineString' && transformedGeometry.coordinates.length > 0) {
       // Calculate center of line string
-      const coords = geometry.coordinates
+      const coords = transformedGeometry.coordinates
       const lons = coords
         .map((coord: number[]) => coord[0])
         .filter((lon: number) => typeof lon === 'number' && !isNaN(lon))
@@ -178,6 +182,7 @@ export function calculateGeometryCenter(geometry: any): { lat: number; lon: numb
 export interface CreatePlaceOptions {
   source: string
   sourceId: string
+  osm_id?: string | null
   name: string
   type: string
   location?: string | null
@@ -185,14 +190,17 @@ export interface CreatePlaceOptions {
   region?: string | null
   country?: string
   description?: string | null
-  quality?: number
+  source_score?: number
   metadata?: any
+  website?: string | null
+  wikipedia_query?: string | null
 }
 
 export function createPlaceObject(options: CreatePlaceOptions): any {
   const {
     source,
     sourceId,
+    osm_id,
     name,
     type,
     location,
@@ -200,13 +208,16 @@ export function createPlaceObject(options: CreatePlaceOptions): any {
     region,
     country = 'France',
     description,
-    quality = 1,
+    source_score = 1,
     metadata,
+    website,
+    wikipedia_query,
   } = options
 
   return {
     source,
     source_id: sourceId,
+    osm_id: osm_id ? String(osm_id).replace(/^-/, '') : null,
     name: name.trim(),
     type,
     location,
@@ -214,8 +225,10 @@ export function createPlaceObject(options: CreatePlaceOptions): any {
     region,
     country,
     description,
-    quality,
+    source_score,
     metadata,
+    website,
+    wikipedia_query,
   }
 }
 

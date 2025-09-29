@@ -20,12 +20,13 @@ class NaturePlacesFetcher {
   }
 
   private preparePlace(place: any, department: string, isNaturalRegionalPark = false): any {
-    const quality = isNaturalRegionalPark ? 8 : 1
+    const source_score = isNaturalRegionalPark ? 8 : 1
     const location = place.latitude && place.longitude ? createPointWKT(place.longitude, place.latitude) : null
 
     return createPlaceObject({
       source: 'OSM',
       sourceId: `osm:${place.osm_id}`,
+      osm_id: place.osm_id,
       name: place.name,
       type: place.type,
       location,
@@ -33,7 +34,7 @@ class NaturePlacesFetcher {
       region: department,
       country: 'France',
       description: place.tags?.description || null,
-      quality,
+      source_score,
       metadata: place,
     })
   }

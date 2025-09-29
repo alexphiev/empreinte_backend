@@ -2,6 +2,18 @@
  * Geometry utilities for coordinate manipulation and GeoJSON operations
  */
 
+import proj4 from 'proj4'
+
+// Define coordinate reference systems
+const WGS84 = 'EPSG:4326' // Standard lat/lon
+const LAMBERT_93 = 'EPSG:9794' // Lambert 93 v2b - French projected coordinate system
+
+// Define Lambert 93 projection parameters (EPSG:9794 - RGF93 v2b / Lambert-93)
+proj4.defs(
+  'EPSG:9794',
+  '+proj=lcc +lat_0=46.5 +lon_0=3 +lat_1=49 +lat_2=44 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
+)
+
 export interface Point {
   lat: number
   lon: number
@@ -225,4 +237,103 @@ export function calculateDistance(point1: Point, point2: Point): number {
       Math.sin(dLon / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return R * c
+}
+
+/**
+ * Detect if coordinates are in a projected coordinate system (like Lambert 93)
+ * vs standard lat/lon. Lambert 93 coordinates are typically much larger numbers.
+ */
+export function isProjectedCoordinate(x: number, y: number): boolean {
+  // Lambert 93 coordinates are typically:
+  // X: 100,000 to 1,200,000 meters
+  // Y: 6,000,000 to 7,200,000 meters
+  // While lat/lon are:
+  // Longitude: -180 to 180 degrees
+  // Latitude: -90 to 90 degrees
+
+  return (
+    (Math.abs(x) > 180 || Math.abs(y) > 90) && // Outside lat/lon bounds
+    x > 50000 &&
+    x < 1500000 && // Reasonable X range for Lambert 93
+    y > 5500000 &&
+    y < 7500000 // Reasonable Y range for Lambert 93
+  )
+}
+
+/**
+ * Transform coordinates from Lambert 93 to WGS84 (lat/lon)
+ */
+export function transformLambert93ToWGS84(x: number, y: number): { lat: number; lon: number } | null {
+  try {
+    const result = proj4(LAMBERT_93, WGS84, [x, y])
+    return {
+      lon: result[0],
+      lat: result[1],
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to transform Lambert 93 coordinates:', error)
+    return null
+  }
+}
+
+/**
+ * Transform a coordinate pair, detecting if transformation is needed
+ */
+export function transformCoordinate(x: number, y: number): { lat: number; lon: number } | null {
+  if (isProjectedCoordinate(x, y)) {
+    return transformLambert93ToWGS84(x, y)
+  }
+
+  // Already in lat/lon format, just return with proper ordering
+  return {
+    lon: x,
+    lat: y,
+  }
+}
+
+/**
+ * Transform a geometry object, handling different geometry types
+ */
+export function transformGeometry(geometry: any): any {
+  if (!geometry || !geometry.coordinates) {
+    return geometry
+  }
+
+  try {
+    if (geometry.type === 'Point') {
+      const transformed = transformCoordinate(geometry.coordinates[0], geometry.coordinates[1])
+      if (!transformed) return geometry
+
+      return {
+        ...geometry,
+        coordinates: [transformed.lon, transformed.lat],
+      }
+    } else if (geometry.type === 'Polygon') {
+      return {
+        ...geometry,
+        coordinates: geometry.coordinates.map((ring: Array<[number, number]>) =>
+          ring.map((coord: [number, number]) => {
+            const transformed = transformCoordinate(coord[0], coord[1])
+            return transformed ? [transformed.lon, transformed.lat] : coord
+          }),
+        ),
+      }
+    } else if (geometry.type === 'MultiPolygon') {
+      return {
+        ...geometry,
+        coordinates: geometry.coordinates.map((polygon: Array<Array<[number, number]>>) =>
+          polygon.map((ring: Array<[number, number]>) =>
+            ring.map((coord: [number, number]) => {
+              const transformed = transformCoordinate(coord[0], coord[1])
+              return transformed ? [transformed.lon, transformed.lat] : coord
+            }),
+          ),
+        ),
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to transform geometry:', error)
+  }
+
+  return geometry
 }

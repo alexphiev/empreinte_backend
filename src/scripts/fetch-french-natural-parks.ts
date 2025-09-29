@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { overpassService } from '../services/overpass.service'
 import { CacheManager, createCacheManager } from '../utils/cache'
 import {
   batchUpsert,
@@ -10,7 +11,7 @@ import {
   type ProcessStats,
   validatePlace,
 } from '../utils/common'
-import { createPointWKT } from '../utils/geometry'
+import { createPointWKT, simplifyCoordinates, transformGeometry } from '../utils/geometry'
 
 interface FrenchNaturalPark {
   id?: string | number
@@ -26,7 +27,7 @@ interface FrenchNaturalPark {
 class FrenchNaturalParksFetcher {
   public readonly stats: ProcessStats
   private readonly cacheManager: CacheManager
-  private readonly cacheKey = 'french_natural_parks'
+  private readonly cacheKey = 'datagouv/regional_parks_france'
   private readonly dataUrl = 'https://www.data.gouv.fr/api/1/datasets/r/1c2e318d-eadd-4e3d-8b36-d3cac67cd796'
 
   constructor() {
@@ -87,7 +88,7 @@ class FrenchNaturalParksFetcher {
     }
   }
 
-  private preparePlace(park: FrenchNaturalPark): any | null {
+  private preparePlace(park: FrenchNaturalPark, overpassData?: any): any | null {
     const properties = park.properties || {}
     const name = properties.name || properties.nom || properties.NAME || 'Unknown Park'
 
@@ -95,29 +96,81 @@ class FrenchNaturalParksFetcher {
       return null
     }
 
-    const center = calculateGeometryCenter(park.geometry)
+    // Use Overpass geometry if available (already in WGS84), otherwise transform data.gouv.fr geometry
+    let finalGeometry = park.geometry
+    let center: { lat: number; lon: number } | null = null
+
+    if (overpassData && overpassData.geometry) {
+      console.log(`🔄 Using Overpass geometry for park: ${name} (ID: ${properties.osm_id})`)
+      finalGeometry = overpassData.geometry
+      center = overpassData.center || calculateGeometryCenter(overpassData.geometry)
+    } else {
+      if (properties.osm_id) {
+        console.log(`⚠️ OSM data not found for park: ${name} (ID: ${properties.osm_id})`)
+      }
+      console.log(`📍 Using data.gouv.fr geometry for park: ${name}`)
+      center = calculateGeometryCenter(park.geometry)
+
+      // Transform and simplify original geometry if no Overpass data
+      if (park.geometry && park.geometry.coordinates) {
+        try {
+          // First, transform coordinates from Lambert 93 to WGS84 if needed
+          const transformedGeometry = transformGeometry(park.geometry)
+
+          // Then simplify the transformed geometry
+          if (transformedGeometry.type === 'Polygon' && Array.isArray(transformedGeometry.coordinates)) {
+            // Simplify each ring of the polygon
+            finalGeometry = {
+              ...transformedGeometry,
+              coordinates: transformedGeometry.coordinates.map(
+                (ring: Array<[number, number]>) => simplifyCoordinates(ring, 0.0002), // ~20m tolerance
+              ),
+            }
+          } else if (transformedGeometry.type === 'MultiPolygon' && Array.isArray(transformedGeometry.coordinates)) {
+            // Simplify each polygon in the multipolygon
+            finalGeometry = {
+              ...transformedGeometry,
+              coordinates: transformedGeometry.coordinates.map((polygon: Array<Array<[number, number]>>) =>
+                polygon.map(
+                  (ring: Array<[number, number]>) => simplifyCoordinates(ring, 0.0002), // ~20m tolerance
+                ),
+              ),
+            }
+          } else {
+            // For other geometry types, just use the transformed version
+            finalGeometry = transformedGeometry
+          }
+        } catch (error) {
+          console.warn(`⚠️ Failed to process geometry for park: ${name}`, error)
+          // Keep original geometry if processing fails
+        }
+      }
+    }
+
     if (!center) {
       console.warn(`⚠️ Cannot determine center point for park: ${name}`)
       return null
     }
 
     // Use park's ID if available, otherwise generate one
-    const sourceId = park.id ? `fnp:${park.id}` : `fnp:${name.toLowerCase().replace(/\s+/g, '-')}`
+    const sourceId = park.id ? `datagouv:${park.id}` : `datagouv:${name.toLowerCase().replace(/\s+/g, '-')}`
 
     return createPlaceObject({
       source: 'DATA.GOUV',
       sourceId,
+      osm_id: properties.osm_id ? String(properties.osm_id).replace(/^-/, '') : null,
       name,
-      type: 'regional_natural_park',
+      type: 'regional_park',
       location: createPointWKT(center.lon, center.lat),
-      geometry: park.geometry,
+      geometry: finalGeometry,
       region: null,
       country: 'France',
       description: properties.description || null,
-      quality: 8,
+      source_score: 8,
+      website: properties.website || null,
+      wikipedia_query: properties.wikipedia || null,
       metadata: {
         ...properties,
-        original_id: park.id,
         source_url: this.dataUrl,
       },
     })
@@ -125,6 +178,71 @@ class FrenchNaturalParksFetcher {
 
   private printProgress(): void {
     printProgress(this.stats, 'French Natural Regional Parks')
+  }
+
+  /**
+   * Extract OSM IDs from parks data (removing leading '-' if present)
+   */
+  private extractOsmIds(parks: FrenchNaturalPark[]): number[] {
+    const osmIds: number[] = []
+
+    for (const park of parks) {
+      const properties = park.properties || {}
+      if (properties.osm_id) {
+        // Remove leading '-' and convert to number
+        const cleanId = String(properties.osm_id).replace(/^-/, '')
+        const numericId = parseInt(cleanId, 10)
+
+        if (!isNaN(numericId)) {
+          osmIds.push(numericId)
+        } else {
+          console.warn(`⚠️ Invalid OSM ID for park: ${properties.name || 'Unknown'} - ${properties.osm_id}`)
+        }
+      }
+    }
+
+    console.log(`📋 Extracted ${osmIds.length} OSM IDs from ${parks.length} parks`)
+    return osmIds
+  }
+
+  /**
+   * Enrich parks data with Overpass API data
+   */
+  private async enrichParksWithOverpassData(parks: FrenchNaturalPark[]): Promise<Map<number, any>> {
+    console.log(`🔍 Enriching ${parks.length} parks with Overpass data...`)
+
+    // Extract OSM IDs
+    const osmIds = this.extractOsmIds(parks)
+
+    if (osmIds.length === 0) {
+      console.log(`⚠️ No valid OSM IDs found, skipping Overpass enrichment`)
+      return new Map()
+    }
+
+    // Query Overpass API in batches
+    const overpassElements = await overpassService.queryByIds(osmIds)
+
+    // Create map of OSM ID to processed element data
+    const elementMap = new Map<number, any>()
+    for (const element of overpassElements) {
+      // Convert raw element to processed data with geometry
+      const processedElement = {
+        ...element,
+        geometry: overpassService.convertToGeoJSON(element),
+      }
+      elementMap.set(element.id, processedElement)
+    }
+
+    console.log(`✅ Retrieved ${overpassElements.length}/${osmIds.length} elements from Overpass`)
+
+    // Log missing elements
+    const foundIds = new Set(overpassElements.map((e) => e.id))
+    const missingIds = osmIds.filter((id) => !foundIds.has(id))
+    if (missingIds.length > 0) {
+      console.log(`❌ Missing OSM elements: ${missingIds.join(', ')}`)
+    }
+
+    return elementMap
   }
 
   public async fetchAllParks(): Promise<void> {
@@ -148,11 +266,20 @@ class FrenchNaturalParksFetcher {
 
       console.log(`📋 Processing ${parks.length} French natural parks...`)
 
-      // Prepare all places for batch upsert
+      // Enrich parks with Overpass data
+      const overpassDataMap = await this.enrichParksWithOverpassData(parks)
+
+      // Prepare all places for batch upsert, merging data sources
       const preparedPlaces = parks
         .map((park) => {
           this.stats.processedCount++
-          const prepared = this.preparePlace(park)
+
+          // Get OSM ID for this park
+          const properties = park.properties || {}
+          const osmId = properties.osm_id ? parseInt(String(properties.osm_id).replace(/^-/, ''), 10) : null
+          const overpassData = osmId ? overpassDataMap.get(osmId) : null
+
+          const prepared = this.preparePlace(park, overpassData)
           return prepared && validatePlace(prepared) ? prepared : null
         })
         .filter((place): place is NonNullable<typeof place> => place !== null)
@@ -164,13 +291,13 @@ class FrenchNaturalParksFetcher {
 
       console.log(`🏞️  Upserting ${preparedPlaces.length} French natural parks...`)
 
-      // Batch upsert in chunks of 100
+      // Batch upsert in chunks of 10 to prevent timeout with large geometry data
       await batchUpsert(
         preparedPlaces,
         {
           tableName: 'places',
-          conflictColumn: 'source_id',
-          batchSize: 100,
+          conflictColumn: 'osm_id',
+          batchSize: 10,
         },
         this.stats,
       )
