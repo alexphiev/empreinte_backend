@@ -3,9 +3,9 @@ import { departments, getDepartmentByCode } from '../data/department.data'
 import { overpassService } from '../services/overpass.service'
 import {
   batchUpsert,
-  createPlaceObject,
   createProcessStats,
   formatDuration,
+  formatPlaceObject,
   printProgress,
   type ProcessStats,
   validatePlace,
@@ -23,7 +23,7 @@ class NaturePlacesFetcher {
     const source_score = isNaturalRegionalPark ? 8 : 1
     const location = place.latitude && place.longitude ? createPointWKT(place.longitude, place.latitude) : null
 
-    return createPlaceObject({
+    return formatPlaceObject({
       source: 'OSM',
       sourceId: `osm:${place.osm_id}`,
       osm_id: place.osm_id,

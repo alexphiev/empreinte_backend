@@ -184,6 +184,7 @@ export interface CreatePlaceOptions {
   sourceId: string
   osm_id?: string | null
   name: string
+  short_name?: string | null
   type: string
   location?: string | null
   geometry?: any
@@ -191,17 +192,19 @@ export interface CreatePlaceOptions {
   country?: string
   description?: string | null
   source_score?: number
+  score?: number
   metadata?: any
   website?: string | null
   wikipedia_query?: string | null
 }
 
-export function createPlaceObject(options: CreatePlaceOptions): any {
+export function formatPlaceObject(options: CreatePlaceOptions): any {
   const {
     source,
     sourceId,
     osm_id,
     name,
+    short_name,
     type,
     location,
     geometry,
@@ -209,6 +212,7 @@ export function createPlaceObject(options: CreatePlaceOptions): any {
     country = 'France',
     description,
     source_score = 1,
+    score = 1,
     metadata,
     website,
     wikipedia_query,
@@ -219,6 +223,7 @@ export function createPlaceObject(options: CreatePlaceOptions): any {
     source_id: sourceId,
     osm_id: osm_id ? String(osm_id).replace(/^-/, '') : null,
     name: name.trim(),
+    short_name,
     type,
     location,
     geometry,
@@ -226,6 +231,7 @@ export function createPlaceObject(options: CreatePlaceOptions): any {
     country,
     description,
     source_score,
+    score,
     metadata,
     website,
     wikipedia_query,

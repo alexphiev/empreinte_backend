@@ -1,8 +1,11 @@
 import 'dotenv/config'
 import { supabase } from '../services/supabase.service'
-import { Tables } from '../types/database'
-
-type Place = Tables<'places'>
+import {
+  calculatePlaceScore,
+  hasWebsiteEnhancement,
+  hasRedditEnhancement,
+  hasWikipediaEnhancement,
+} from '../services/score.service'
 
 interface ScoreRecalculationResult {
   placeId: string
@@ -44,30 +47,20 @@ async function recalculateScores() {
       const previousEnhancementScore = place.enhancement_score || 0
       const previousTotalScore = place.score || 0
 
-      // Calculate enhancement score based on existing enhanced fields
-      let newEnhancementScore = 0
+      // Calculate scores using the score service
+      const scoreCalculation = calculatePlaceScore(place)
+      const newEnhancementScore = scoreCalculation.totalEnhancementScore
+      const newTotalScore = scoreCalculation.totalScore
 
-      // Website enhancement (+2 points)
-      if (isValidEnhancement(place.website_generated)) {
-        newEnhancementScore += 2
+      if (scoreCalculation.websiteScore > 0) {
         console.log('  ✅ Website enhancement found (+2 points)')
       }
-
-      // Reddit enhancement (+2 points)
-      if (isValidEnhancement(place.reddit_generated)) {
-        newEnhancementScore += 2
+      if (scoreCalculation.redditScore > 0) {
         console.log('  ✅ Reddit enhancement found (+2 points)')
       }
-
-      // Wikipedia enhancement (+4 points)
-      if (isValidEnhancement(place.wikipedia_generated)) {
-        newEnhancementScore += 4
+      if (scoreCalculation.wikipediaScore > 0) {
         console.log('  ✅ Wikipedia enhancement found (+4 points)')
       }
-
-      // Calculate new total score
-      const sourceScore = place.source_score || 0
-      const newTotalScore = sourceScore + newEnhancementScore
 
       const result: ScoreRecalculationResult = {
         placeId: place.id,
@@ -125,24 +118,6 @@ async function recalculateScores() {
   }
 }
 
-function isValidEnhancement(field: string | null): boolean {
-  if (!field) return false
-  if (field === 'not found') return false
-  if (field.includes('NO_RELEVANT_INFO')) return false
-  return true
-}
-
-function hasWebsiteEnhancement(place: Place): boolean {
-  return isValidEnhancement(place.website_generated)
-}
-
-function hasRedditEnhancement(place: Place): boolean {
-  return isValidEnhancement(place.reddit_generated)
-}
-
-function hasWikipediaEnhancement(place: Place): boolean {
-  return isValidEnhancement(place.wikipedia_generated)
-}
 
 // Run the script
 recalculateScores().catch(console.error)

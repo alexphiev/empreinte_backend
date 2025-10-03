@@ -31,6 +31,7 @@ export type Database = {
           reddit_generated: string | null
           region: string | null
           score: number
+          short_name: string | null
           source: string | null
           source_id: string | null
           source_score: number | null
@@ -59,6 +60,7 @@ export type Database = {
           reddit_generated?: string | null
           region?: string | null
           score: number
+          short_name?: string | null
           source?: string | null
           source_id?: string | null
           source_score?: number | null
@@ -87,6 +89,7 @@ export type Database = {
           reddit_generated?: string | null
           region?: string | null
           score?: number
+          short_name?: string | null
           source?: string | null
           source_id?: string | null
           source_score?: number | null

@@ -91,24 +91,37 @@ export function getAIError(): string | null {
   return initError
 }
 
+function createEnhancementPrompt(
+  placeName: string,
+  contentType: string,
+  content: string,
+  focusAreas: string[],
+): string {
+  const focusAreasText = focusAreas.map((area) => `- ${area}`).join('\n')
+
+  return `You are helping to enhance place information for a nature and outdoor discovery app.
+
+Place name: ${placeName}
+${contentType}: ${content}
+
+Please analyze this ${contentType.toLowerCase()} and provide a summary that includes ONLY relevant information for someone visiting this nature/outdoor place. Focus on:
+${focusAreasText}
+
+IMPORTANT: Only include information if it's clearly relevant and useful for visitors. If the content is not relevant to travel, outdoor/nature activities or visitor planning, respond with "NO_RELEVANT_INFO". We prefer no information over irrelevant or poor quality information.`
+}
+
 export async function summarizeWebsiteContent(placeName: string, websiteContent: string): Promise<string | null> {
   const genAI = getGenAI()
   if (!genAI) {
     throw new Error('AI service is not available')
   }
 
-  const prompt = `You are helping to enhance place information for a nature and outdoor recreation app.
-
-Place name: ${placeName}
-Website content: ${websiteContent}
-
-Please analyze this website content and provide a concise summary (2-3 sentences max) that includes ONLY relevant information for someone visiting this nature/outdoor place. Focus on:
-- Key activities available
-- Important visitor information (hours, fees, accessibility)
-- Notable features or attractions
-- Seasonal information if relevant
-
-IMPORTANT: Only include information if it's clearly relevant and useful for visitors. If the content is not relevant to outdoor/nature activities or visitor planning, respond with "NO_RELEVANT_INFO". We prefer no information over irrelevant or poor quality information.`
+  const prompt = createEnhancementPrompt(placeName, 'Website content', websiteContent, [
+    'Key activities available',
+    'Important visitor information (hours, fees, accessibility)',
+    'Notable features or attractions',
+    'Seasonal information if relevant',
+  ])
 
   const contents = [{ role: 'user', parts: [{ text: prompt }] }]
 
@@ -165,18 +178,12 @@ export async function summarizeRedditContent(
     .map((thread, i) => `Thread ${i + 1}: ${thread.title}\nComments: ${thread.comments.join(' | ')}`)
     .join('\n\n')
 
-  const prompt = `You are helping to enhance place information for a nature and outdoor recreation app.
-
-Place name: ${placeName}
-Reddit discussions: ${threadsText}
-
-Please analyze these Reddit discussions and provide a concise summary (2-3 sentences max) that includes ONLY relevant visitor insights about this nature/outdoor place. Focus on:
-- Visitor tips and experiences
-- Best times to visit
-- Things to be aware of
-- Activity recommendations
-
-IMPORTANT: Only include information if it's clearly relevant and useful for future visitors. If the discussions are not relevant to outdoor/nature activities or visitor planning, respond with "NO_RELEVANT_INFO". We prefer no information over irrelevant or poor quality information.`
+  const prompt = createEnhancementPrompt(placeName, 'Reddit discussions', threadsText, [
+    'Visitor tips and experiences',
+    'Best times to visit',
+    'Things to be aware of',
+    'Activity recommendations',
+  ])
 
   const contents = [{ role: 'user', parts: [{ text: prompt }] }]
 
@@ -205,18 +212,12 @@ export async function summarizeWikipediaContent(placeName: string, wikipediaCont
     throw new Error('AI service is not available')
   }
 
-  const prompt = `You are helping to enhance place information for a nature and outdoor recreation app.
-
-Place name: ${placeName}
-Wikipedia content: ${wikipediaContent}
-
-Please analyze this Wikipedia content and provide a concise summary (2-3 sentences max) that includes ONLY relevant information for someone visiting this nature/outdoor place. Focus on:
-- Geographic and natural features
-- Historical or cultural significance
-- Activities available
-- Access information
-
-IMPORTANT: Only include information if it's clearly relevant and useful for visitors. If the content is not relevant to outdoor/nature activities or visitor planning, respond with "NO_RELEVANT_INFO". We prefer no information over irrelevant or poor quality information.`
+  const prompt = createEnhancementPrompt(placeName, 'Wikipedia content', wikipediaContent, [
+    'Geographic and natural features',
+    'Historical or cultural significance',
+    'Activities available',
+    'Access information',
+  ])
 
   const contents = [{ role: 'user', parts: [{ text: prompt }] }]
 

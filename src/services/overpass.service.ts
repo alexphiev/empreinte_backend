@@ -425,10 +425,6 @@ out center geom;`
           const innerWays: Array<Array<[number, number]>> = []
 
           for (const member of (element as any).members) {
-            console.log(
-              `🔧   Member ${member.ref}: type=${member.type}, role='${member.role}', has_geometry=${!!member.geometry}`,
-            )
-
             if (member.geometry && Array.isArray(member.geometry)) {
               const coordinates: Array<[number, number]> = member.geometry
                 .filter((point: any) => point.lat && point.lon)
@@ -441,12 +437,8 @@ out center geom;`
                 // Only process members with explicit 'outer' or 'inner' roles
                 if (member.role === 'outer') {
                   outerWays.push(simplified)
-                  console.log(`🔧     Added outer way with ${simplified.length} points`)
                 } else if (member.role === 'inner') {
                   innerWays.push(simplified)
-                  console.log(`🔧     Added inner way with ${simplified.length} points`)
-                } else {
-                  console.log(`🔧     Skipped member with role '${member.role}' (not outer/inner)`)
                 }
               }
             }
@@ -473,15 +465,11 @@ out center geom;`
                 coordinates: allRings,
               }
             } else {
-              // Multiple outer ways - order them properly and connect to form one continuous boundary
-              console.log(`🔧 Element ${element.id} has ${outerWays.length} outer ways, ordering and connecting them`)
-
               // Prepare ways for ordering
               const waysWithCoords = outerWays.map((coords) => ({ coordinates: coords }))
 
               // Order the ways so they connect properly
               const orderedWays = orderWays(waysWithCoords)
-              console.log(`🔧   Successfully ordered ${orderedWays.length}/${outerWays.length} ways`)
 
               // Connect all ordered ways into one continuous boundary
               const allCoordinates: Array<[number, number]> = []
@@ -591,7 +579,9 @@ out center geom;`
       const batch = ids.slice(i, i + batchSize)
 
       try {
-        console.log(`🔍 Querying batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(ids.length / batchSize)} with ${batch.length} IDs`)
+        console.log(
+          `🔍 Querying batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(ids.length / batchSize)} with ${batch.length} IDs`,
+        )
 
         const batchResults = await this.queryBatchIds(batch)
         results.push(...batchResults)
@@ -633,7 +623,7 @@ out center geom;`
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
-    const data = await response.json() as OverpassResponse
+    const data = (await response.json()) as OverpassResponse
 
     if (!data.elements || !Array.isArray(data.elements)) {
       console.warn('⚠️ No elements found in response')

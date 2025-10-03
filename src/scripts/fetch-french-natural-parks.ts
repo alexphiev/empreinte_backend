@@ -4,9 +4,9 @@ import { CacheManager, createCacheManager } from '../utils/cache'
 import {
   batchUpsert,
   calculateGeometryCenter,
-  createPlaceObject,
   createProcessStats,
   formatDuration,
+  formatPlaceObject,
   printProgress,
   type ProcessStats,
   validatePlace,
@@ -88,6 +88,12 @@ class FrenchNaturalParksFetcher {
     }
   }
 
+  private extractShortName(name: string): string {
+    // Remove "Parc naturel régional" prefix
+    const cleanName = name.replace(/^Parc naturel régional\s+(de\s+la\s+|des\s+|du\s+|de\s+|d')?/i, '').trim()
+    return cleanName
+  }
+
   private preparePlace(park: FrenchNaturalPark, overpassData?: any): any | null {
     const properties = park.properties || {}
     const name = properties.name || properties.nom || properties.NAME || 'Unknown Park'
@@ -101,7 +107,6 @@ class FrenchNaturalParksFetcher {
     let center: { lat: number; lon: number } | null = null
 
     if (overpassData && overpassData.geometry) {
-      console.log(`🔄 Using Overpass geometry for park: ${name} (ID: ${properties.osm_id})`)
       finalGeometry = overpassData.geometry
       center = overpassData.center || calculateGeometryCenter(overpassData.geometry)
     } else {
@@ -155,11 +160,12 @@ class FrenchNaturalParksFetcher {
     // Use park's ID if available, otherwise generate one
     const sourceId = park.id ? `datagouv:${park.id}` : `datagouv:${name.toLowerCase().replace(/\s+/g, '-')}`
 
-    return createPlaceObject({
+    return formatPlaceObject({
       source: 'DATA.GOUV',
       sourceId,
       osm_id: properties.osm_id ? String(properties.osm_id).replace(/^-/, '') : null,
       name,
+      short_name: this.extractShortName(name),
       type: 'regional_park',
       location: createPointWKT(center.lon, center.lat),
       geometry: finalGeometry,
@@ -167,6 +173,7 @@ class FrenchNaturalParksFetcher {
       country: 'France',
       description: properties.description || null,
       source_score: 8,
+      score: 8,
       website: properties.website || null,
       wikipedia_query: properties.wikipedia || null,
       metadata: {

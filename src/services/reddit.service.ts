@@ -35,43 +35,34 @@ export class RedditService {
   private accessToken: string | null = null
   private tokenExpiry: number = 0
 
-  private extractCleanParkName(fullName: string): string {
-    // Remove "Parc naturel régional" prefix and common variations
-    const cleanName = fullName
-      .replace(/^Parc naturel régional\s+(de\s+la\s+|des\s+|du\s+|de\s+)?/i, '')
-      .replace(/^Parc naturel\s+(de\s+la\s+|des\s+|du\s+|de\s+)?/i, '')
-      .replace(/^Parc\s+(de\s+la\s+|des\s+|du\s+|de\s+)?/i, '')
-      .trim()
-
-    return cleanName
-  }
-
-  private generateSearchQueries(placeName: string): string[] {
-    const cleanName = this.extractCleanParkName(placeName)
+  private generateSearchQueries(name: string, shortName: string | null): string[] {
     const queries: string[] = []
 
-    // Base clean name
-    queries.push(cleanName)
-
     // French nature keywords
-    const frenchKeywords = ['découvrir', 'randonnée', 'nature', 'visite', 'balade', 'paysage', 'endroit']
+    const frenchKeywords = ['recommendations', 'randonnée', 'nature', 'visite', 'balade', 'paysage', 'endroit']
     frenchKeywords.forEach((keyword) => {
-      queries.push(`${cleanName} ${keyword}`)
+      queries.push(`${keyword} ${name}`)
+      if (shortName) {
+        queries.push(`${keyword} ${shortName}`)
+      }
     })
 
     // English nature keywords
     const englishKeywords = [
+      'recommendations',
       'landscape',
       'discover',
       'hiking',
       'nature',
       'visit',
       'trekking',
-      'outdoor',
       'off the beaten path',
     ]
     englishKeywords.forEach((keyword) => {
-      queries.push(`${cleanName} ${keyword}`)
+      queries.push(`${name} ${keyword}`)
+      if (shortName) {
+        queries.push(`${shortName} ${keyword}`)
+      }
     })
 
     // Remove duplicates and return
@@ -120,7 +111,7 @@ export class RedditService {
     }
   }
 
-  private async searchRedditPosts(placeName: string): Promise<RedditPost[]> {
+  private async searchRedditPosts(name: string, shortName: string | null): Promise<RedditPost[]> {
     const token = await this.getAccessToken()
     if (!token) {
       return []
@@ -142,11 +133,11 @@ export class RedditService {
       const allSubreddits = [...internationalSubreddits, ...frenchSubreddits]
 
       // Generate multiple search queries using the new strategy
-      const searchQueries = this.generateSearchQueries(placeName)
+      const searchQueries = this.generateSearchQueries(name, shortName)
 
       let allPosts: RedditPost[] = []
 
-      console.log(`🔍 Searching Reddit with ${searchQueries.length} different queries for: ${placeName}`)
+      console.log(`🔍 Searching Reddit with ${searchQueries.length} different queries for: ${name}`)
 
       for (const query of searchQueries) {
         // Try both with and without subreddit restrictions for broader coverage
@@ -247,15 +238,16 @@ export class RedditService {
   }
 
   public async searchAndSummarizeRedditDiscussions(
-    placeName: string,
+    name: string,
+    shortName: string | null,
   ): Promise<{ summary: string | null; rawData: any | null }> {
     try {
-      console.log(`🔍 Searching Reddit discussions for place: ${placeName}`)
+      console.log(`🔍 Searching Reddit discussions for place: ${name}`)
 
-      const posts = await this.searchRedditPosts(placeName)
+      const posts = await this.searchRedditPosts(name, shortName)
 
       if (posts.length === 0) {
-        console.log(`❌ No Reddit discussions found for ${placeName}`)
+        console.log(`❌ No Reddit discussions found for ${name}`)
         return { summary: null, rawData: null }
       }
 
@@ -278,13 +270,13 @@ export class RedditService {
       }
 
       if (threadsWithComments.length === 0) {
-        console.log(`❌ No Reddit comments found for ${placeName}`)
+        console.log(`❌ No Reddit comments found for ${name}`)
         return { summary: null, rawData: null }
       }
 
       console.log(`📄 Processing ${threadsWithComments.length} threads with comments, sending to AI for summarization`)
 
-      const summary = await summarizeRedditContent(placeName, { threads: threadsWithComments })
+      const summary = await summarizeRedditContent(name, { threads: threadsWithComments })
 
       // Store raw data for historical reference
       const rawData = {
@@ -293,14 +285,14 @@ export class RedditService {
       }
 
       if (summary) {
-        console.log(`✅ Generated Reddit summary for ${placeName}`)
+        console.log(`✅ Generated Reddit summary for ${name}`)
       } else {
-        console.log(`❌ No relevant Reddit summary generated for ${placeName}`)
+        console.log(`❌ No relevant Reddit summary generated for ${name}`)
       }
 
       return { summary, rawData }
     } catch (error) {
-      console.error(`❌ Error processing Reddit discussions for ${placeName}:`, error)
+      console.error(`❌ Error processing Reddit discussions for ${name}:`, error)
       return { summary: null, rawData: null }
     }
   }

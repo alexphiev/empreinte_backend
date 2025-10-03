@@ -128,7 +128,13 @@ export class EnhancementController {
     if (!place.reddit_generated || force) {
       try {
         console.log(`📱 Enhancing Reddit info...`)
-        const redditResult = await redditService.searchAndSummarizeRedditDiscussions(place.name || 'Unknown')
+
+        if (!place.name) {
+          console.log(`❌ Reddit enhancement failed - no name`)
+          return result
+        }
+
+        const redditResult = await redditService.searchAndSummarizeRedditDiscussions(place.name, place.short_name)
 
         if (redditResult && redditResult.summary && !redditResult.summary.includes('NO_RELEVANT_INFO')) {
           updates.reddit_generated = redditResult.summary
