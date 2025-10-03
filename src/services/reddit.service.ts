@@ -38,30 +38,19 @@ export class RedditService {
   private generateSearchQueries(name: string, shortName: string | null): string[] {
     const queries: string[] = []
 
-    // French nature keywords
-    const frenchKeywords = ['recommendations', 'randonnée', 'nature', 'visite', 'balade', 'paysage', 'endroit']
-    frenchKeywords.forEach((keyword) => {
-      queries.push(`${keyword} ${name}`)
-      if (shortName) {
-        queries.push(`${keyword} ${shortName}`)
-      }
-    })
+    // Primary queries with strict name matching using quotes
+    queries.push(`"${name}"`)
+    if (shortName && shortName !== name) {
+      queries.push(`"${shortName}"`)
+    }
 
-    // English nature keywords
-    const englishKeywords = [
-      'recommendations',
-      'landscape',
-      'discover',
-      'hiking',
-      'nature',
-      'visit',
-      'trekking',
-      'off the beaten path',
-    ]
-    englishKeywords.forEach((keyword) => {
-      queries.push(`${name} ${keyword}`)
-      if (shortName) {
-        queries.push(`${shortName} ${keyword}`)
+    // Only use top 2-3 most effective keywords per language
+    const topKeywords = ['recommendations', 'travel', 'visit']
+
+    topKeywords.forEach((keyword) => {
+      queries.push(`"${name}" ${keyword}`)
+      if (shortName && shortName !== name) {
+        queries.push(`"${shortName}" ${keyword}`)
       }
     })
 
@@ -137,49 +126,46 @@ export class RedditService {
 
       let allPosts: RedditPost[] = []
 
-      console.log(`🔍 Searching Reddit with ${searchQueries.length} different queries for: ${name}`)
+      console.log(`🔍 Searching Reddit with ${searchQueries.length} queries for: ${name}`)
 
       for (const query of searchQueries) {
-        // Try both with and without subreddit restrictions for broader coverage
-        const searches = [
-          // Search within specific subreddits
-          {
-            query: `${query} (${allSubreddits.map((sub) => `subreddit:${sub}`).join(' OR ')})`,
-            type: 'targeted',
-          },
-          // General search for popular posts
-          {
-            query: query,
-            type: 'general',
-          },
-        ]
+        // Only do targeted search within specific subreddits
+        const searchQuery = `${query} (${allSubreddits.map((sub) => `subreddit:${sub}`).join(' OR ')})`
 
-        for (const search of searches) {
-          try {
-            const response = await fetch(
-              `https://oauth.reddit.com/search?q=${encodeURIComponent(search.query)}&sort=top&t=all&limit=5`,
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'User-Agent': 'EmpreinteBot/1.0 (Nature Places Data Enhancement)',
-                },
+        try {
+          const response = await fetch(
+            `https://oauth.reddit.com/search?q=${encodeURIComponent(searchQuery)}&sort=top&t=all&limit=3`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'User-Agent': 'EmpreinteBot/1.0 (Nature Places Data Enhancement)',
               },
-            )
+            },
+          )
 
-            if (response.ok) {
-              const data = (await response.json()) as RedditApiResponse
-              allPosts.push(...data.data.children)
+          if (response.ok) {
+            const data = (await response.json()) as RedditApiResponse
 
-              if (data.data.children.length > 0) {
-                console.log(`📱 Found ${data.data.children.length} posts for query: "${query}" (${search.type})`)
-              }
+            // Filter posts to verify the place name actually appears in title or selftext
+            const relevantPosts = data.data.children.filter((post) => {
+              const title = post.data.title.toLowerCase()
+              const checkName = name.toLowerCase()
+              const checkShortName = shortName?.toLowerCase()
+
+              return title.includes(checkName) || (checkShortName && title.includes(checkShortName))
+            })
+
+            allPosts.push(...relevantPosts)
+
+            if (relevantPosts.length > 0) {
+              console.log(`📱 Found ${relevantPosts.length} relevant posts for query: "${query}"`)
             }
-
-            // Small delay between requests to be respectful
-            await new Promise((resolve) => setTimeout(resolve, 300))
-          } catch (error) {
-            console.warn(`⚠️ Error with search query "${search.query}":`, error)
           }
+
+          // Small delay between requests to be respectful
+          await new Promise((resolve) => setTimeout(resolve, 300))
+        } catch (error) {
+          console.warn(`⚠️ Error with search query "${searchQuery}":`, error)
         }
       }
 
@@ -190,7 +176,8 @@ export class RedditService {
 
       console.log(`📊 Total unique posts found: ${uniquePosts.length}`)
 
-      return uniquePosts.sort((a, b) => b.data.ups - a.data.ups).slice(0, 8) // Top 8 posts for better coverage
+      // Limit to top 5 posts maximum for efficiency
+      return uniquePosts.sort((a, b) => b.data.ups - a.data.ups).slice(0, 5)
     } catch (error) {
       console.error('❌ Error searching Reddit posts:', error)
       return []

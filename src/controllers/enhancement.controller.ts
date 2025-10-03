@@ -1,3 +1,4 @@
+import { updatePlace } from '../db/places'
 import { redditService } from '../services/reddit.service'
 import { supabase } from '../services/supabase.service'
 import { websiteScraperService } from '../services/website-scraper.service'
@@ -122,6 +123,11 @@ export class EnhancementController {
         console.error(`❌ ${errorMsg}`)
         result.errors.push(errorMsg)
       }
+    } else {
+      console.log(`🌐 Website enhancement skipped - already enhanced`)
+      if (place.website_generated && !place.website_generated.toLowerCase().includes('no_relevant_info')) {
+        enhancementScore += 2
+      }
     }
 
     // 2. Reddit Enhancement
@@ -157,6 +163,11 @@ export class EnhancementController {
         const errorMsg = `Reddit enhancement failed: ${error}`
         console.error(`❌ ${errorMsg}`)
         result.errors.push(errorMsg)
+      }
+    } else {
+      console.log(`🌐 Reddit enhancement skipped - already enhanced`)
+      if (place.reddit_generated && !place.reddit_generated.toLowerCase().includes('no_relevant_info')) {
+        enhancementScore += 2
       }
     }
 
@@ -208,6 +219,11 @@ export class EnhancementController {
         console.error(`❌ ${errorMsg}`)
         result.errors.push(errorMsg)
       }
+    } else {
+      console.log(`🌐 Wikipedia enhancement skipped - already enhanced`)
+      if (place.wikipedia_generated && !place.wikipedia_generated.toLowerCase().includes('no_relevant_info')) {
+        enhancementScore += 4
+      }
     }
 
     // 4. Update Score and Save to Database
@@ -222,7 +238,7 @@ export class EnhancementController {
     console.log(`📈 Total score: ${totalScore}`)
 
     try {
-      const { error } = await supabase.from('places').update(updates).eq('id', place.id)
+      const { error } = await updatePlace(place.id, updates)
 
       if (error) {
         const errorMsg = `Database update failed: ${error.message}`

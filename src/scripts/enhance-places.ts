@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { enhancementController } from '../controllers/enhancement.controller'
+import { getPlaceById } from '../db/places'
 import { getAIError, isAIAvailable } from '../services/ai.service'
 
 async function main() {
@@ -29,8 +30,6 @@ async function main() {
     process.exit(1)
   }
 
-  console.log('✅ All environment variables configured')
-  console.log('✅ AI service is available')
   console.log()
 
   try {
@@ -65,16 +64,13 @@ async function main() {
 async function enhanceSinglePlace(placeId?: string, force: boolean = false) {
   if (!placeId) {
     console.error('❌ Place ID is required for single place enhancement')
-    console.log('Usage: yarn enhance-places single <place-id>')
+    console.log('Usage: yarn enhance-places <place-id>')
     process.exit(1)
   }
 
   console.log(`🎯 Enhancing single place: ${placeId}`)
 
-  // Get the specific place
-  const { supabase } = await import('../services/supabase.service')
-
-  const { data: place, error } = await supabase.from('places').select('*').eq('id', placeId).single()
+  const { data: place, error } = await getPlaceById(placeId)
 
   if (error) {
     console.error('❌ Error fetching place:', error)

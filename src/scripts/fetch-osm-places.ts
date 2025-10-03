@@ -19,8 +19,8 @@ class NaturePlacesFetcher {
     this.stats = createProcessStats()
   }
 
-  private preparePlace(place: any, department: string, isNaturalRegionalPark = false): any {
-    const source_score = isNaturalRegionalPark ? 8 : 1
+  private preparePlace(place: any, department: string): any {
+    const source_score = 1 // Default score for OSM places
     const location = place.latitude && place.longitude ? createPointWKT(place.longitude, place.latitude) : null
 
     return formatPlaceObject({
@@ -43,24 +43,24 @@ class NaturePlacesFetcher {
     printProgress(this.stats, `${department} | API Requests: ${overpassService.getRequestCount()}`)
   }
 
-  public async fetchDepartment(departmentCode: string, naturalRegionalParksOnly = false): Promise<void> {
+  public async fetchDepartment(departmentCode: string, limit?: number): Promise<void> {
     const department = getDepartmentByCode(departmentCode)
     if (!department) {
       throw new Error(`Department ${departmentCode} not found`)
     }
 
-    const modeText = naturalRegionalParksOnly ? 'Natural Regional Parks' : 'Nature Places'
-    console.log(`\n🌿 Starting fetch for ${modeText} in ${department.name} (${departmentCode})`)
+    console.log(`\n🌿 Starting fetch for ${department.name} (${departmentCode})`)
     console.log(
       `📍 Bounding box: South=${department.bbox.south}, West=${department.bbox.west}, North=${department.bbox.north}, East=${department.bbox.east}`,
     )
+    if (limit) {
+      console.log(`🔢 Limit: ${limit} places`)
+    }
 
     try {
       // Query Overpass API
       console.log('🌐 Querying Overpass API...')
-      const elements = naturalRegionalParksOnly
-        ? await overpassService.queryRegionalParks(department.bbox, departmentCode)
-        : await overpassService.queryNaturePlaces(department.bbox, departmentCode)
+      const elements = await overpassService.queryNaturePlaces(department.bbox, departmentCode)
 
       if (elements.length === 0) {
         console.log('❓ No elements found in this department')
@@ -68,13 +68,18 @@ class NaturePlacesFetcher {
       }
 
       console.log(`📋 Processing ${elements.length} elements from Overpass API...`)
-      const places = overpassService.processElements(elements)
+      let places = overpassService.processElements(elements)
+
+      if (limit && places.length > limit) {
+        console.log(`✂️ Limiting to first ${limit} places (out of ${places.length})`)
+        places = places.slice(0, limit)
+      }
 
       // Prepare all places for batch upsert
       const preparedPlaces = places
         .map((place) => {
           this.stats.processedCount++
-          const prepared = this.preparePlace(place, departmentCode, naturalRegionalParksOnly)
+          const prepared = this.preparePlace(place, departmentCode)
           return validatePlace(prepared) ? prepared : null
         })
         .filter((place): place is NonNullable<typeof place> => place !== null)
@@ -84,14 +89,14 @@ class NaturePlacesFetcher {
         return
       }
 
-      console.log(`🌿 Upserting ${preparedPlaces.length} OSM ${modeText.toLowerCase()}...`)
+      console.log(`🌿 Upserting ${preparedPlaces.length} OSM places...`)
 
       // Batch upsert in chunks of 10 to prevent timeout with large geometry data
       await batchUpsert(
         preparedPlaces,
         {
           tableName: 'places',
-          conflictColumn: 'source_id',
+          conflictColumn: 'osm_id',
           batchSize: 10,
         },
         this.stats,
@@ -99,68 +104,9 @@ class NaturePlacesFetcher {
 
       // Final report
       this.printProgress(`${department.name} (${departmentCode})`)
-      console.log(`🎉 Completed ${modeText} in ${department.name} (${departmentCode}) successfully!`)
+      console.log(`🎉 Completed ${department.name} (${departmentCode}) successfully!`)
     } catch (error) {
       console.error(`💥 Error processing ${department.name}:`, error)
-      throw error
-    }
-  }
-
-  public async fetchAllFrenchNaturalRegionalParks(): Promise<void> {
-    console.log(`\n🏞️ Starting fetch for ALL French Natural Regional Parks`)
-
-    try {
-      // Query Overpass API for all France
-      console.log('🌐 Querying Overpass API for all France...')
-      const franceBbox = {
-        south: 41.0,
-        west: -5.0,
-        north: 51.0,
-        east: 10.0,
-      }
-
-      const elements = await overpassService.queryRegionalParks(franceBbox)
-
-      if (elements.length === 0) {
-        console.log('❓ No natural regional parks found in France')
-        return
-      }
-
-      console.log(`📋 Processing ${elements.length} French natural regional parks...`)
-      const places = overpassService.processElements(elements)
-
-      // Prepare all places for batch upsert
-      const preparedPlaces = places
-        .map((place) => {
-          this.stats.processedCount++
-          const prepared = this.preparePlace(place, 'France', true)
-          return validatePlace(prepared) ? prepared : null
-        })
-        .filter((place): place is NonNullable<typeof place> => place !== null)
-
-      if (preparedPlaces.length === 0) {
-        console.log('❓ No places to insert after processing')
-        return
-      }
-
-      console.log(`🏞️ Upserting ${preparedPlaces.length} French natural regional parks...`)
-
-      // Batch upsert in chunks of 10 to prevent timeout with large geometry data
-      await batchUpsert(
-        preparedPlaces,
-        {
-          tableName: 'places',
-          conflictColumn: 'source_id',
-          batchSize: 10,
-        },
-        this.stats,
-      )
-
-      // Final report
-      this.printProgress('All French Natural Regional Parks')
-      console.log(`🎉 Completed French Natural Regional Parks import successfully!`)
-    } catch (error) {
-      console.error(`💥 Error processing French Natural Regional Parks:`, error)
       throw error
     }
   }
@@ -177,17 +123,14 @@ async function main() {
   const fetcher = new NaturePlacesFetcher()
 
   try {
-    if (firstArg === 'all-parks') {
-      await fetcher.fetchAllFrenchNaturalRegionalParks()
-    } else if (firstArg) {
+    if (firstArg) {
       const departmentCode = firstArg
-      const mode = args[1] || 'places' // 'places' or 'parks'
-      const naturalRegionalParksOnly = mode === 'parks'
-      await fetcher.fetchDepartment(departmentCode, naturalRegionalParksOnly)
+      const limitArg = args.find((arg) => arg.startsWith('--limit='))
+      const limit = limitArg ? parseInt(limitArg.split('=')[1], 10) : undefined
+      await fetcher.fetchDepartment(departmentCode, limit)
     } else {
       console.error('❌ Usage:')
-      console.log('  pnpm run fetch-osm-places <department-code> [places|parks]')
-      console.log('  pnpm run fetch-osm-places all-parks')
+      console.log('  pnpm run fetch-osm-places <department-code> [--limit=N]')
       console.log(
         '🏞️  Available departments:',
         departments

@@ -30,27 +30,21 @@ pnpm dev
 
 The application includes several scripts to fetch place data from different sources:
 
-### Fetch French Regional Natural Parks
+### Fetch French Regional/National Parks
 
-Downloads and imports French regional natural parks from data.gouv.fr:
+Downloads and imports French regional/national parks from data.gouv.fr:
 
 ```bash
-pnpm fetch-french-parks
+pnpm fetch-french-regional-parks --force --limit=100
+pnpm fetch-french-national-parks --force --limit=100
 ```
-
-This script:
-- Downloads park data from the official French government data API
-- Caches data locally as `datagouv_regional_parks_france.json` for faster re-runs
-- Extracts park names, locations, websites, and Wikipedia references
-- Imports data into the `places` table with type `regional_park`
-- Handles geometric data and calculates center points
-- Uses quality score of 8 for government data
 
 ### Other Fetching Scripts
 
 ```bash
 # Fetch places from OpenStreetMap
-pnpm fetch-osm-places
+pnpm fetch-osm-places <department-code> --limit=optional_limit
+pnpm fetch-osm-places 30 --limit=100
 
 # Fetch places from Overture Maps
 pnpm fetch-overture-places
@@ -76,7 +70,7 @@ The application includes a comprehensive system for enhancing place data with in
 pnpm enhance-places list
 
 # Enhance a specific place by ID
-pnpm enhance-places single <place-id>
+pnpm enhance-places <place-id>
 
 # Enhance all places that need enhancement
 pnpm enhance-places all
@@ -114,6 +108,7 @@ The system enriches place records with:
 - **Wikipedia Content**: Extracts and summarizes Wikipedia articles about places
 
 Quality scores are increased for successful enhancements:
+
 - Website info: +2 points
 - Reddit info: +2 points (only for relevant discussions)
 - Wikipedia info: +4 points
@@ -129,6 +124,7 @@ pnpm recalculate-scores
 ```
 
 This script:
+
 - Iterates through all places in the database
 - Recalculates enhancement scores based on existing enhanced fields
 - Updates `enhancement_score` and total `score` fields

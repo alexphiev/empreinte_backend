@@ -1,4 +1,4 @@
-import { OSM_TAG_TO_TYPE } from '../data/osm.data'
+import { OSM_FILTERS, OSM_TAG_TO_TYPE } from '../data/osm.data'
 import { CacheManager, createCacheManager } from '../utils/cache'
 import { delay } from '../utils/common'
 import {
@@ -68,62 +68,25 @@ export class OverpassService {
   }
 
   private normalizeFeatureType(tags: Record<string, string>): string {
-    // Use the comprehensive mapping function
-    const mappedType = this.mapTagsToType(tags)
+    const mappedType = this.formatType(tags)
 
     if (mappedType !== 'unknown') {
       return mappedType
     }
 
-    // Try fallback tags
-    const fallbackType = tags.natural || tags.leisure || tags.boundary
-    if (fallbackType && fallbackType.trim() !== '') {
-      return fallbackType
-    }
-
-    // Log unknown types for analysis
     console.log('🔍 UNKNOWN TYPE - Tags:', JSON.stringify(tags, null, 2))
 
     return 'unknown'
   }
 
-  private mapTagsToType(tags: Record<string, string>): string {
-    // Handle special cases first
-    if (tags.landuse === 'protected_area' && tags.boundary_title?.includes('parc naturel régional')) {
-      return 'regional_park'
-    }
-
-    // Special building cases with name context
-    if (tags.building === 'public' && tags.name?.toLowerCase().includes('maison du parc')) {
-      return 'park_house'
-    }
-    if (tags.building === 'public' && tags.name?.toLowerCase().includes('office de tourisme')) {
-      return 'tourist_office'
-    }
-
-    // Building + amenity combination
-    if (tags.building === 'yes' && tags.amenity === 'shelter') {
-      return 'shelter'
-    }
-
-    // Administrative boundaries (dynamic type)
-    if (tags.admin_level && tags.boundary === 'administrative') {
-      return `admin_level_${tags.admin_level}`
-    }
-
-    // Search through standard mappings
-    for (const [key, value] of Object.entries(tags)) {
-      const mappingValue = OSM_TAG_TO_TYPE[key]
-      if (mappingValue && mappingValue[value]) {
-        return mappingValue[value]
+  private formatType(tags: Record<string, string>): string {
+    for (const [tagKey, tagValue] of Object.entries(tags)) {
+      if (OSM_TAG_TO_TYPE[tagKey] && OSM_TAG_TO_TYPE[tagKey][tagValue]) {
+        return OSM_TAG_TO_TYPE[tagKey][tagValue]
       }
     }
 
-    console.log('🔍 UNKNOWN TYPE - Tags:', JSON.stringify(tags, null, 2))
-    const combinedTags = Object.entries(tags)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ')
-    return combinedTags
+    return 'unknown'
   }
 
   private getCenterPoint(element: OverpassElement): { lat: number; lon: number } | null {
@@ -179,41 +142,19 @@ export class OverpassService {
   }
 
   private buildQuery(bbox: BoundingBox): string {
-    const query = `[out:json][timeout:180][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
-(
-  way[natural~"^(forest|wood|beach|wetland|glacier|desert|geologic_formation|island|waterfall|mountain)$"];
-  relation[natural~"^(forest|wood|beach|wetland|glacier|desert|geologic_formation|island|waterfall|mountain)$"];
-  node[natural~"^(peak|cave_entrance|hot_spring)$"];
-  way[leisure~"^(park|nature_reserve|botanical_garden)$"];
-  relation[leisure~"^(park|nature_reserve|botanical_garden)$"];
-  way[boundary~"^(national_park|protected_area)$"];
-  relation[boundary~"^(national_park|protected_area)$"];
-  way[waterway~"^(river|stream|canal)$"];
-  relation[waterway~"^(river|stream|canal)$"];
-);
-out center geom;`
-    return query
-  }
+    const queries: string[] = []
 
-  private buildNaturalRegionalParksQuery(bbox: BoundingBox): string {
+    for (const [tagKey, tagValues] of Object.entries(OSM_TAG_TO_TYPE)) {
+      const values = Object.keys(tagValues)
+      const valuePattern = `^(${values.join('|')})$`
+      queries.push(`  node[${tagKey}~"${valuePattern}"];`)
+      queries.push(`  way[${tagKey}~"${valuePattern}"];`)
+      queries.push(`  relation[${tagKey}~"${valuePattern}"];`)
+    }
+
     const query = `[out:json][timeout:180][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
 (
-  // Original spec
-  way[landuse="protected_area"]["boundary_title"="parc naturel régional"];
-  relation[landuse="protected_area"]["boundary_title"="parc naturel régional"];
-  node[landuse="protected_area"]["boundary_title"="parc naturel régional"];
-  
-  // Alternative tagging patterns
-  way[boundary="protected_area"]["designation"~"parc naturel régional",i];
-  relation[boundary="protected_area"]["designation"~"parc naturel régional",i];
-  way[leisure="nature_reserve"]["designation"~"parc naturel régional",i];
-  relation[leisure="nature_reserve"]["designation"~"parc naturel régional",i];
-  way[protect_class="5"]["designation"~"parc naturel régional",i];
-  relation[protect_class="5"]["designation"~"parc naturel régional",i];
-  
-  // Search by name pattern
-  way[name~"Parc naturel régional",i];
-  relation[name~"Parc naturel régional",i];
+${queries.join('\n')}
 );
 out center geom;`
     return query
@@ -234,9 +175,9 @@ out center geom;`
     await this.cacheManager.save(`overpass_${cacheKey}`, elements)
   }
 
-  public async queryNaturePlaces(bbox: BoundingBox, departmentCode?: string, retries = 3): Promise<OverpassElement[]> {
+  public async queryNaturePlaces(bbox: BoundingBox, departmentCode: string, retries = 3): Promise<OverpassElement[]> {
     // Check cache first
-    const cacheKey = departmentCode ? `dept_${departmentCode}` : 'all'
+    const cacheKey = `dept_${departmentCode}`
     const cachedData = await this.loadFromCache(cacheKey)
     if (cachedData) {
       return cachedData
@@ -377,14 +318,6 @@ out center geom;`
     return []
   }
 
-  public async queryRegionalParks(bbox: BoundingBox, departmentCode?: string, retries = 3): Promise<OverpassElement[]> {
-    const cacheKey = departmentCode
-      ? `nrp_dept_${departmentCode}`
-      : `nrp_${bbox.south}_${bbox.west}_${bbox.north}_${bbox.east}`.replace(/\./g, '_')
-    const query = this.buildNaturalRegionalParksQuery(bbox)
-    return this.executeQuery(query, cacheKey, retries)
-  }
-
   public convertToGeoJSON(element: OverpassElement): any {
     try {
       if (element.type === 'node' && element.lon && element.lat) {
@@ -522,27 +455,103 @@ out center geom;`
           return null
         }
 
-        // Skip buildings and administrative offices (these are not park boundaries)
-        if (tags.building === 'yes' || tags.office === 'government') {
-          console.log(`🔧 Skipping building/office: ${tags.name}`)
-          return null
-        }
-
-        return {
+        const placeType = this.normalizeFeatureType(tags)
+        const place = {
           osm_id: element.id,
           name: tags.name,
-          type: this.normalizeFeatureType(tags),
+          type: placeType,
           latitude: center?.lat || null,
           longitude: center?.lon || null,
           geometry: geoJsonGeometry,
           tags,
         }
+
+        if (!this.shouldIncludePlace(place)) {
+          console.log(`🔧 Filtering out ${placeType}: ${tags.name} (failed filter criteria)`)
+          return null
+        }
+
+        return place
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
   }
 
   public getRequestCount(): number {
     return this.requestCount
+  }
+
+  private calculateArea(geometry: any): number | null {
+    if (!geometry) {
+      return null
+    }
+
+    if (geometry.type === 'Polygon' && geometry.coordinates && geometry.coordinates[0]) {
+      return this.calculatePolygonArea(geometry.coordinates[0])
+    }
+
+    if (geometry.type === 'MultiPolygon' && geometry.coordinates) {
+      return geometry.coordinates.reduce((total: number, polygon: any) => {
+        if (polygon[0]) {
+          return total + this.calculatePolygonArea(polygon[0])
+        }
+        return total
+      }, 0)
+    }
+
+    return null
+  }
+
+  private calculatePolygonArea(coordinates: Array<[number, number]>): number {
+    if (coordinates.length < 3) {
+      return 0
+    }
+
+    let area = 0
+    const numPoints = coordinates.length - 1
+
+    for (let i = 0; i < numPoints; i++) {
+      const [lon1, lat1] = coordinates[i]
+      const [lon2, lat2] = coordinates[i + 1]
+      area += lon1 * lat2 - lon2 * lat1
+    }
+
+    area = Math.abs(area) / 2
+
+    const avgLat = coordinates.reduce((sum, [, lat]) => sum + lat, 0) / coordinates.length
+    const metersPerDegree = 111320 * Math.cos((avgLat * Math.PI) / 180)
+    const areaInSquareMeters = area * metersPerDegree * metersPerDegree
+
+    return areaInSquareMeters
+  }
+
+  private shouldIncludePlace(place: {
+    type: string
+    name: string
+    tags: Record<string, string>
+    geometry: any
+  }): boolean {
+    const { tags, name, type, geometry } = place
+
+    if (!name || name.length < 3) {
+      return false
+    }
+
+    const minArea = OSM_FILTERS.minArea[type as keyof typeof OSM_FILTERS.minArea]
+    if (minArea) {
+      const area = this.calculateArea(geometry)
+      if (!area || area < minArea) {
+        return false
+      }
+    }
+
+    const requiredTags = OSM_FILTERS.requireTags[type as keyof typeof OSM_FILTERS.requireTags]
+    if (requiredTags) {
+      if (!requiredTags.every((tag) => tags[tag])) {
+        return false
+      }
+    }
+
+    return true
   }
 
   /**

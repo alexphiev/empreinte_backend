@@ -134,9 +134,7 @@ export async function summarizeWebsiteContent(placeName: string, websiteContent:
 
     let responseText: string
     try {
-      console.log('🤖 Raw Gemma response:', JSON.stringify(result, null, 2))
       responseText = extractResponseText(result).trim()
-      console.log('📝 Extracted response text:', responseText)
     } catch (extractError) {
       // Retry without grounding tools if text extraction fails
       console.warn('First attempt failed, retrying without grounding tools...', extractError)
@@ -157,12 +155,81 @@ export async function summarizeWebsiteContent(placeName: string, websiteContent:
       return null
     }
 
-    console.log('✅ AI processing successful, returning:', responseText)
+    console.log('✅ AI processing successful')
     return responseText
   } catch (error) {
     console.error('Error summarizing website content:', error)
     return null
   }
+}
+
+export async function checkRedditRelevance(
+  placeName: string,
+  threads: Array<{ title: string; comments: string[] }>,
+): Promise<Array<{ title: string; comments: string[]; isRelevant: boolean }>> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  const results: Array<{ title: string; comments: string[]; isRelevant: boolean }> = []
+
+  for (const thread of threads) {
+    const previewComments = thread.comments.slice(0, 3)
+    const previewText = `Title: ${thread.title}\nSample comments: ${previewComments.join(' | ')}`
+
+    const prompt = `You are helping to filter Reddit discussions for a nature and outdoor discovery app.
+
+Place name: ${placeName}
+
+Reddit thread preview:
+${previewText}
+
+Is this Reddit thread SPECIFICALLY about visiting, discovering, or experiencing "${placeName}" as a nature/outdoor place?
+Answer ONLY with "YES" or "NO".
+
+Answer "YES" only if:
+- The thread is clearly about this specific place
+- It contains visitor experiences, tips, or recommendations
+- It discusses nature/outdoor activities at this place
+
+Answer "NO" if:
+- It's about a different place with a similar name
+- It's only tangentially related
+- It's not about nature/outdoor activities
+- The place is only mentioned in passing`
+
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+    try {
+      const result = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+
+      const responseText = extractResponseText(result).trim().toUpperCase()
+      const isRelevant = responseText.includes('YES')
+
+      results.push({
+        title: thread.title,
+        comments: thread.comments,
+        isRelevant,
+      })
+
+      console.log(`  ${isRelevant ? '✅' : '❌'} Thread relevance check: "${thread.title.slice(0, 60)}..."`)
+    } catch (error) {
+      console.error('Error checking Reddit relevance:', error)
+      results.push({
+        title: thread.title,
+        comments: thread.comments,
+        isRelevant: false,
+      })
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+
+  return results
 }
 
 export async function summarizeRedditContent(
@@ -174,7 +241,19 @@ export async function summarizeRedditContent(
     throw new Error('AI service is not available')
   }
 
-  const threadsText = redditData.threads
+  console.log(`🔍 Stage 1: Checking relevance of ${redditData.threads.length} threads...`)
+  const checkedThreads = await checkRedditRelevance(placeName, redditData.threads)
+
+  const relevantThreads = checkedThreads.filter((t) => t.isRelevant)
+
+  if (relevantThreads.length === 0) {
+    console.log('❌ No relevant threads found after filtering')
+    return null
+  }
+
+  console.log(`✅ Found ${relevantThreads.length} relevant threads, proceeding to summarization...`)
+
+  const threadsText = relevantThreads
     .map((thread, i) => `Thread ${i + 1}: ${thread.title}\nComments: ${thread.comments.join(' | ')}`)
     .join('\n\n')
 
