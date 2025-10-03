@@ -13,7 +13,7 @@ import {
 } from '../utils/common'
 import { createPointWKT, simplifyCoordinates, transformGeometry } from '../utils/geometry'
 
-interface FrenchNaturalPark {
+interface FrenchRegionalPark {
   id?: string | number
   geometry?: any
   properties?: {
@@ -24,7 +24,7 @@ interface FrenchNaturalPark {
   [key: string]: any
 }
 
-class FrenchNaturalParksFetcher {
+class FrenchRegionalParksFetcher {
   public readonly stats: ProcessStats
   private readonly cacheManager: CacheManager
   private readonly cacheKey = 'datagouv/regional_parks_france'
@@ -35,7 +35,7 @@ class FrenchNaturalParksFetcher {
     this.cacheManager = createCacheManager({ baseDir: 'temp' })
   }
 
-  private async loadFromCache(): Promise<FrenchNaturalPark[] | null> {
+  private async loadFromCache(): Promise<FrenchRegionalPark[] | null> {
     const data = await this.cacheManager.load<any>(this.cacheKey)
     if (!data) return null
 
@@ -54,8 +54,8 @@ class FrenchNaturalParksFetcher {
     await this.cacheManager.save(this.cacheKey, data)
   }
 
-  private async downloadData(): Promise<FrenchNaturalPark[]> {
-    console.log('🌐 Downloading French natural parks data from data.gouv.fr...')
+  private async downloadData(): Promise<FrenchRegionalPark[]> {
+    console.log('🌐 Downloading French regional parks data from data.gouv.fr...')
 
     try {
       const response = await fetch(this.dataUrl, {
@@ -69,7 +69,7 @@ class FrenchNaturalParksFetcher {
       }
 
       const data = await response.json()
-      console.log('📥 Successfully downloaded French natural parks data')
+      console.log('📥 Successfully downloaded French regional parks data')
 
       // Save to cache for future use
       await this.saveToCache(data)
@@ -78,7 +78,7 @@ class FrenchNaturalParksFetcher {
       if ((data as any).features && Array.isArray((data as any).features)) {
         return (data as any).features
       } else if (Array.isArray(data)) {
-        return data as FrenchNaturalPark[]
+        return data as FrenchRegionalPark[]
       } else {
         throw new Error('Unexpected data format received')
       }
@@ -94,7 +94,7 @@ class FrenchNaturalParksFetcher {
     return cleanName
   }
 
-  private preparePlace(park: FrenchNaturalPark, overpassData?: any): any | null {
+  private preparePlace(park: FrenchRegionalPark, overpassData?: any): any | null {
     const properties = park.properties || {}
     const name = properties.name || properties.nom || properties.NAME || 'Unknown Park'
 
@@ -184,13 +184,13 @@ class FrenchNaturalParksFetcher {
   }
 
   private printProgress(): void {
-    printProgress(this.stats, 'French Natural Regional Parks')
+    printProgress(this.stats, 'French Regional Parks')
   }
 
   /**
    * Extract OSM IDs from parks data (removing leading '-' if present)
    */
-  private extractOsmIds(parks: FrenchNaturalPark[]): number[] {
+  private extractOsmIds(parks: FrenchRegionalPark[]): number[] {
     const osmIds: number[] = []
 
     for (const park of parks) {
@@ -215,7 +215,7 @@ class FrenchNaturalParksFetcher {
   /**
    * Enrich parks data with Overpass API data
    */
-  private async enrichParksWithOverpassData(parks: FrenchNaturalPark[]): Promise<Map<number, any>> {
+  private async enrichParksWithOverpassData(parks: FrenchRegionalPark[]): Promise<Map<number, any>> {
     console.log(`🔍 Enriching ${parks.length} parks with Overpass data...`)
 
     // Extract OSM IDs
@@ -253,7 +253,7 @@ class FrenchNaturalParksFetcher {
   }
 
   public async fetchAllParks(): Promise<void> {
-    console.log(`\n🏞️  Starting fetch for French Natural Regional Parks`)
+    console.log(`\n🏞️  Starting fetch for French Regional Parks`)
 
     try {
       await this.cacheManager.ensureDir()
@@ -271,7 +271,7 @@ class FrenchNaturalParksFetcher {
         return
       }
 
-      console.log(`📋 Processing ${parks.length} French natural parks...`)
+      console.log(`📋 Processing ${parks.length} French regional parks...`)
 
       // Enrich parks with Overpass data
       const overpassDataMap = await this.enrichParksWithOverpassData(parks)
@@ -296,7 +296,7 @@ class FrenchNaturalParksFetcher {
         return
       }
 
-      console.log(`🏞️  Upserting ${preparedPlaces.length} French natural parks...`)
+      console.log(`🏞️  Upserting ${preparedPlaces.length} French regional parks...`)
 
       // Batch upsert in chunks of 10 to prevent timeout with large geometry data
       await batchUpsert(
@@ -311,9 +311,9 @@ class FrenchNaturalParksFetcher {
 
       // Final report
       this.printProgress()
-      console.log(`🎉 Completed French Natural Regional Parks import successfully!`)
+      console.log(`🎉 Completed French Regional Parks import successfully!`)
     } catch (error) {
-      console.error(`💥 Error processing French Natural Regional Parks:`, error)
+      console.error(`💥 Error processing French Regional Parks:`, error)
       throw error
     }
   }
@@ -321,19 +321,19 @@ class FrenchNaturalParksFetcher {
 
 // Main execution
 async function main() {
-  console.log(`🚀 Starting French Natural Regional Parks Fetcher`)
+  console.log(`🚀 Starting French Regional Parks Fetcher`)
   console.log(`📅 Started at: ${new Date().toISOString()}`)
 
-  const fetcher = new FrenchNaturalParksFetcher()
+  const fetcher = new FrenchRegionalParksFetcher()
 
   try {
     await fetcher.fetchAllParks()
 
-    console.log('\n🏁 French natural parks fetch completed successfully!')
+    console.log('\n🏁 French regional parks fetch completed successfully!')
     console.log(`📅 Finished at: ${new Date().toISOString()}`)
     console.log(`⏱️ Total runtime: ${formatDuration(fetcher.stats.startTime)}`)
   } catch (error) {
-    console.error('\n💥 French natural parks fetch failed:', error)
+    console.error('\n💥 French regional parks fetch failed:', error)
     process.exit(1)
   }
 }
@@ -342,4 +342,4 @@ if (require.main === module) {
   main().catch(console.error)
 }
 
-export { FrenchNaturalParksFetcher }
+export { FrenchRegionalParksFetcher }

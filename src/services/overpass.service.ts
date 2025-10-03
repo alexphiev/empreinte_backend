@@ -5,7 +5,6 @@ import {
   calculateCenterFromCoordinates,
   closePolygon,
   isClosedPolygon,
-  orderWays,
   simplifyCoordinates,
   type Point,
 } from '../utils/geometry'
@@ -305,31 +304,26 @@ out center geom;`
     return []
   }
 
-  public async queryNaturalRegionalParks(
-    bbox: BoundingBox,
-    departmentCode?: string,
-    retries = 3,
-  ): Promise<OverpassElement[]> {
-    // Check cache first
-    const cacheKey = departmentCode
-      ? `nrp_dept_${departmentCode}`
-      : `nrp_${bbox.south}_${bbox.west}_${bbox.north}_${bbox.east}`.replace(/\./g, '_')
-    const cachedData = await this.loadFromCache(cacheKey)
-    if (cachedData) {
-      return cachedData
+  /**
+   * Generic query executor with retry logic and caching
+   */
+  private async executeQuery(query: string, cacheKey?: string, retries = 3): Promise<OverpassElement[]> {
+    if (cacheKey) {
+      const cachedData = await this.loadFromCache(cacheKey)
+      if (cachedData) {
+        return cachedData
+      }
     }
 
     await this.waitForRateLimit()
 
-    const query = this.buildNaturalRegionalParksQuery(bbox)
     const currentUrl = this.baseUrls[this.currentUrlIndex]
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.log(`Querying Overpass API for Natural Regional Parks (attempt ${attempt}/${retries})...`)
+        console.log(`Querying Overpass API (attempt ${attempt}/${retries})...`)
         console.log(`URL: ${currentUrl}`)
         console.log(`Request count: ${++this.requestCount}`)
-        console.log(`Query: ${query}`)
 
         const response = await fetch(currentUrl, {
           method: 'POST',
@@ -341,7 +335,7 @@ out center geom;`
         })
 
         if (response.status === 429) {
-          const delayMs = Math.min(5000 * Math.pow(2, attempt - 1), 60000) // Exponential backoff, max 60s
+          const delayMs = Math.min(5000 * Math.pow(2, attempt - 1), 60000)
           console.warn(`Rate limited (429). Waiting ${delayMs}ms before retry...`)
           await delay(delayMs)
           continue
@@ -360,10 +354,11 @@ out center geom;`
         }
 
         const data = (await response.json()) as OverpassResponse
-        console.log(`🏞️  Successfully fetched ${data.elements.length} natural regional parks`)
+        console.log(`✅ Successfully fetched ${data.elements.length} elements`)
 
-        // Save to cache for future use
-        await this.saveToCache(data.elements, cacheKey)
+        if (cacheKey) {
+          await this.saveToCache(data.elements, cacheKey)
+        }
 
         return data.elements
       } catch (error) {
@@ -382,122 +377,105 @@ out center geom;`
     return []
   }
 
+  public async queryRegionalParks(bbox: BoundingBox, departmentCode?: string, retries = 3): Promise<OverpassElement[]> {
+    const cacheKey = departmentCode
+      ? `nrp_dept_${departmentCode}`
+      : `nrp_${bbox.south}_${bbox.west}_${bbox.north}_${bbox.east}`.replace(/\./g, '_')
+    const query = this.buildNaturalRegionalParksQuery(bbox)
+    return this.executeQuery(query, cacheKey, retries)
+  }
+
   public convertToGeoJSON(element: OverpassElement): any {
     try {
-      // Convert Overpass geometry to GeoJSON format
       if (element.type === 'node' && element.lon && element.lat) {
         return {
           type: 'Point',
           coordinates: [element.lon, element.lat],
         }
-      } else if (element.type === 'way' && element.geometry && element.geometry.length > 0) {
+      }
+
+      if (element.type === 'way' && element.geometry && element.geometry.length > 0) {
         const coordinates: Array<[number, number]> = element.geometry.map(
           (point) => [point.lon, point.lat] as [number, number],
         )
 
-        // Simplify the coordinates to reduce size
-        const simplified = simplifyCoordinates(coordinates, 0.0002) // ~20m tolerance
+        const simplified = simplifyCoordinates(coordinates, 0.0002)
 
-        // Check if it's a closed polygon (first and last points are the same)
         if (isClosedPolygon(simplified)) {
           return {
             type: 'Polygon',
             coordinates: [simplified],
           }
-        } else {
-          return {
-            type: 'LineString',
-            coordinates: simplified,
-          }
         }
-      } else if (element.type === 'relation') {
-        // For relations, try to use geometry first, then members geometry, then fallback to center
-        if (element.geometry && element.geometry.length > 0) {
-          const coordinates = element.geometry.map((point) => [point.lon, point.lat])
-          return {
-            type: 'LineString',
-            coordinates: coordinates,
-          }
-        } else if ((element as any).members && Array.isArray((element as any).members)) {
-          // Extract and simplify geometry from relation members
-          const outerWays: Array<Array<[number, number]>> = []
+        return {
+          type: 'LineString',
+          coordinates: simplified,
+        }
+      }
 
-          const innerWays: Array<Array<[number, number]>> = []
+      if (element.type === 'relation' && (element as any).members && Array.isArray((element as any).members)) {
+        const outerWays: Array<Array<[number, number]>> = []
+        const innerWays: Array<Array<[number, number]>> = []
 
-          for (const member of (element as any).members) {
-            if (member.geometry && Array.isArray(member.geometry)) {
-              const coordinates: Array<[number, number]> = member.geometry
-                .filter((point: any) => point.lat && point.lon)
-                .map((point: any) => [point.lon, point.lat])
+        for (const member of (element as any).members) {
+          if (member.geometry && Array.isArray(member.geometry)) {
+            const coordinates: Array<[number, number]> = member.geometry
+              .filter((point: any) => point.lat && point.lon)
+              .map((point: any) => [point.lon, point.lat])
 
-              if (coordinates.length > 0) {
-                // Simplify the coordinates to reduce size while preserving shape
-                const simplified = simplifyCoordinates(coordinates, 0.0002) // ~20m tolerance
+            if (coordinates.length > 0) {
+              const simplified = simplifyCoordinates(coordinates, 0.0002)
 
-                // Only process members with explicit 'outer' or 'inner' roles
-                if (member.role === 'outer') {
-                  outerWays.push(simplified)
-                } else if (member.role === 'inner') {
-                  innerWays.push(simplified)
-                }
-              }
-            }
-          }
-
-          if (outerWays.length > 0) {
-            // For multiple outer ways, we need to be careful - they might need to be connected
-            if (outerWays.length === 1) {
-              // Single outer way - create simple polygon with potential holes
-              const outerCoords = outerWays[0]
-              // Ensure the polygon is closed
-              const closedOuterCoords = closePolygon(outerCoords)
-
-              // Add inner ways as holes
-              const allRings = [closedOuterCoords]
-              for (const innerCoords of innerWays) {
-                // Ensure inner rings are closed
-                const closedInnerCoords = closePolygon(innerCoords)
-                allRings.push(closedInnerCoords)
-              }
-
-              return {
-                type: 'Polygon',
-                coordinates: allRings,
-              }
-            } else {
-              // Prepare ways for ordering
-              const waysWithCoords = outerWays.map((coords) => ({ coordinates: coords }))
-
-              // Order the ways so they connect properly
-              const orderedWays = orderWays(waysWithCoords)
-
-              // Connect all ordered ways into one continuous boundary
-              const allCoordinates: Array<[number, number]> = []
-              for (let i = 0; i < orderedWays.length; i++) {
-                const wayCoords = orderedWays[i].coordinates
-                // Skip the first coordinate of subsequent ways to avoid duplication at connection points
-                const coordsToAdd = i === 0 ? wayCoords : wayCoords.slice(1)
-                allCoordinates.push(...coordsToAdd)
-              }
-
-              // Ensure the polygon is closed (first point = last point)
-              const closedCoordinates = closePolygon(allCoordinates)
-
-              return {
-                type: 'Polygon',
-                coordinates: [closedCoordinates],
+              if (member.role === 'outer') {
+                outerWays.push(simplified)
+              } else if (member.role === 'inner') {
+                innerWays.push(simplified)
               }
             }
           }
         }
 
-        // Fallback to center point for relations without geometry
-        const center = this.getCenterPoint(element)
-        if (center) {
-          return {
-            type: 'Point',
-            coordinates: [center.lon, center.lat],
+        if (outerWays.length === 0) {
+          const center = this.getCenterPoint(element)
+          if (center) {
+            return {
+              type: 'Point',
+              coordinates: [center.lon, center.lat],
+            }
           }
+          return null
+        }
+
+        const closedOuterWays = outerWays.map((coords) => closePolygon(coords))
+        const closedInnerWays = innerWays.map((coords) => closePolygon(coords))
+
+        if (closedOuterWays.length === 1 && closedInnerWays.length === 0) {
+          return {
+            type: 'Polygon',
+            coordinates: [closedOuterWays[0]],
+          }
+        }
+
+        if (closedOuterWays.length === 1 && closedInnerWays.length > 0) {
+          return {
+            type: 'Polygon',
+            coordinates: [closedOuterWays[0], ...closedInnerWays],
+          }
+        }
+
+        const polygons: Array<Array<Array<[number, number]>>> = closedOuterWays.map((outerWay) => [outerWay])
+
+        return {
+          type: 'MultiPolygon',
+          coordinates: polygons,
+        }
+      }
+
+      const center = this.getCenterPoint(element)
+      if (center) {
+        return {
+          type: 'Point',
+          coordinates: [center.lon, center.lat],
         }
       }
     } catch (error) {
@@ -647,6 +625,31 @@ out center geom;`
   node(id:${idList});
 );
 out geom;`
+  }
+
+  /**
+   * Build Overpass query for French national parks
+   */
+  private buildNationalParksQuery(bbox: BoundingBox): string {
+    const query = `[out:json][timeout:180][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+(
+  way[boundary="national_park"];
+  relation[boundary="national_park"];
+  way[leisure="nature_reserve"]["designation"~"parc national",i];
+  relation[leisure="nature_reserve"]["designation"~"parc national",i];
+  way[name~"Parc national",i];
+  relation[name~"Parc national",i];
+);
+out center geom;`
+    return query
+  }
+
+  /**
+   * Search for French national parks in a bounding box
+   */
+  public async queryNationalParks(bbox: BoundingBox, retries = 3): Promise<OverpassElement[]> {
+    const query = this.buildNationalParksQuery(bbox)
+    return this.executeQuery(query, undefined, retries)
   }
 }
 

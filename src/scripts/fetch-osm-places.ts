@@ -59,7 +59,7 @@ class NaturePlacesFetcher {
       // Query Overpass API
       console.log('🌐 Querying Overpass API...')
       const elements = naturalRegionalParksOnly
-        ? await overpassService.queryNaturalRegionalParks(department.bbox, departmentCode)
+        ? await overpassService.queryRegionalParks(department.bbox, departmentCode)
         : await overpassService.queryNaturePlaces(department.bbox, departmentCode)
 
       if (elements.length === 0) {
@@ -119,7 +119,7 @@ class NaturePlacesFetcher {
         east: 10.0,
       }
 
-      const elements = await overpassService.queryNaturalRegionalParks(franceBbox)
+      const elements = await overpassService.queryRegionalParks(franceBbox)
 
       if (elements.length === 0) {
         console.log('❓ No natural regional parks found in France')
