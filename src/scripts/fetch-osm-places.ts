@@ -20,8 +20,18 @@ class NaturePlacesFetcher {
   }
 
   private preparePlace(place: any, department: string): any {
-    const source_score = 1 // Default score for OSM places
+    let source_score = 1
     const location = place.latitude && place.longitude ? createPointWKT(place.longitude, place.latitude) : null
+
+    const wikipedia_query = place.tags?.wikipedia || place.tags?.['wikipedia:fr'] || null
+    if (wikipedia_query) {
+      source_score += 2
+    }
+
+    const website = place.tags?.website || null
+    if (website) {
+      source_score += 2
+    }
 
     return formatPlaceObject({
       source: 'OSM',
@@ -35,6 +45,9 @@ class NaturePlacesFetcher {
       country: 'France',
       description: place.tags?.description || null,
       source_score,
+      score: source_score, // Use source_score as base score before enhancement
+      wikipedia_query,
+      website,
       metadata: place,
     })
   }

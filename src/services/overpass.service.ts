@@ -1,4 +1,4 @@
-import { OSM_FILTERS, OSM_TAG_TO_TYPE } from '../data/osm.data'
+import { OSM_FILTERS, OSM_SUPPORTED_TAGS } from '../data/osm.data'
 import { CacheManager, createCacheManager } from '../utils/cache'
 import { delay } from '../utils/common'
 import {
@@ -81,8 +81,8 @@ export class OverpassService {
 
   private formatType(tags: Record<string, string>): string {
     for (const [tagKey, tagValue] of Object.entries(tags)) {
-      if (OSM_TAG_TO_TYPE[tagKey] && OSM_TAG_TO_TYPE[tagKey][tagValue]) {
-        return OSM_TAG_TO_TYPE[tagKey][tagValue]
+      if (OSM_SUPPORTED_TAGS[tagKey] && OSM_SUPPORTED_TAGS[tagKey].includes(tagValue)) {
+        return tagValue
       }
     }
 
@@ -144,9 +144,8 @@ export class OverpassService {
   private buildQuery(bbox: BoundingBox): string {
     const queries: string[] = []
 
-    for (const [tagKey, tagValues] of Object.entries(OSM_TAG_TO_TYPE)) {
-      const values = Object.keys(tagValues)
-      const valuePattern = `^(${values.join('|')})$`
+    for (const [tagKey, tagValues] of Object.entries(OSM_SUPPORTED_TAGS)) {
+      const valuePattern = `^(${tagValues.join('|')})$`
       queries.push(`  node[${tagKey}~"${valuePattern}"];`)
       queries.push(`  way[${tagKey}~"${valuePattern}"];`)
       queries.push(`  relation[${tagKey}~"${valuePattern}"];`)
@@ -334,6 +333,14 @@ out center geom;`
 
         const simplified = simplifyCoordinates(coordinates, 0.0002)
 
+        const tags = element.tags || {}
+        if (tags.route === 'hiking') {
+          return {
+            type: 'LineString',
+            coordinates: simplified,
+          }
+        }
+
         if (isClosedPolygon(simplified)) {
           return {
             type: 'Polygon',
@@ -347,6 +354,84 @@ out center geom;`
       }
 
       if (element.type === 'relation' && (element as any).members && Array.isArray((element as any).members)) {
+        const tags = element.tags || {}
+
+        if (tags.route === 'hiking' || tags.route === 'bicycle' || tags.route === 'mtb') {
+          const segments: Array<Array<[number, number]>> = []
+
+          for (const member of (element as any).members) {
+            if (member.geometry && Array.isArray(member.geometry)) {
+              const coordinates: Array<[number, number]> = member.geometry
+                .filter((point: any) => point.lat && point.lon)
+                .map((point: any) => [point.lon, point.lat])
+              if (coordinates.length > 0) {
+                segments.push(coordinates)
+              }
+            }
+          }
+
+          if (segments.length === 0) {
+            return null
+          }
+
+          if (segments.length === 1) {
+            const simplified = simplifyCoordinates(segments[0], 0.0001)
+            return {
+              type: 'LineString',
+              coordinates: simplified,
+            }
+          }
+
+          const connectedSegments: Array<Array<[number, number]>> = []
+          const remaining = [...segments]
+
+          while (remaining.length > 0) {
+            let currentSegment = remaining.shift()!
+            let hasConnection = true
+
+            while (hasConnection && remaining.length > 0) {
+              hasConnection = false
+              const lastPoint = currentSegment[currentSegment.length - 1]
+
+              for (let i = 0; i < remaining.length; i++) {
+                const nextSegment = remaining[i]
+                const firstPoint = nextSegment[0]
+                const lastPointOfNext = nextSegment[nextSegment.length - 1]
+
+                if (firstPoint[0] === lastPoint[0] && firstPoint[1] === lastPoint[1]) {
+                  currentSegment = [...currentSegment, ...nextSegment.slice(1)]
+                  remaining.splice(i, 1)
+                  hasConnection = true
+                  break
+                }
+
+                if (lastPointOfNext[0] === lastPoint[0] && lastPointOfNext[1] === lastPoint[1]) {
+                  currentSegment = [...currentSegment, ...nextSegment.slice(0, -1).reverse()]
+                  remaining.splice(i, 1)
+                  hasConnection = true
+                  break
+                }
+              }
+            }
+
+            connectedSegments.push(currentSegment)
+          }
+
+          if (connectedSegments.length === 1) {
+            const simplified = simplifyCoordinates(connectedSegments[0], 0.0001)
+            return {
+              type: 'LineString',
+              coordinates: simplified,
+            }
+          }
+
+          const simplifiedSegments = connectedSegments.map((seg) => simplifyCoordinates(seg, 0.0001))
+          return {
+            type: 'MultiLineString',
+            coordinates: simplifiedSegments,
+          }
+        }
+
         const outerWays: Array<Array<[number, number]>> = []
         const innerWays: Array<Array<[number, number]>> = []
 
@@ -379,8 +464,18 @@ out center geom;`
           return null
         }
 
-        const closedOuterWays = outerWays.map((coords) => closePolygon(coords))
-        const closedInnerWays = innerWays.map((coords) => closePolygon(coords))
+        const closedOuterWays = outerWays.map((coords) => {
+          if (isClosedPolygon(coords)) {
+            return coords
+          }
+          return closePolygon(coords)
+        })
+        const closedInnerWays = innerWays.map((coords) => {
+          if (isClosedPolygon(coords)) {
+            return coords
+          }
+          return closePolygon(coords)
+        })
 
         if (closedOuterWays.length === 1 && closedInnerWays.length === 0) {
           return {
