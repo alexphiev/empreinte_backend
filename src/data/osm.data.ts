@@ -7,11 +7,11 @@ export const OSM_SUPPORTED_TAGS: Record<string, string[]> = {
     'volcano', // A volcano. Always relevant.
     'gorge', // A deep, narrow valley. Prime destination.
     'canyon', // A large gorge. Prime destination.
-    'cliff', // A vertical rock face. Almost always scenic.
+    // 'cliff', // A vertical rock face. Almost always scenic.
     'cave_entrance', // The entrance to a cave. A clear destination.
     'glacier', // A glacier. Always a major natural feature.
     'waterfall', // A waterfall. One of the most sought-after features.
-    'spring', // Especially relevant in France for named "Sources".
+    // 'spring', // Especially relevant in France for named "Sources".
     'hot_spring', // Rare and interesting natural feature.
     'geyser', // Very rare and a major attraction.
     'beach', // A classic natural destination.

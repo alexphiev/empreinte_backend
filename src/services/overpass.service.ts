@@ -141,6 +141,79 @@ export class OverpassService {
     return null
   }
 
+  private connectAndCloseWays(ways: Array<Array<[number, number]>>): Array<Array<[number, number]>> {
+    if (ways.length === 0) {
+      return []
+    }
+
+    if (ways.length === 1) {
+      const way = ways[0]
+      if (way.length < 3) {
+        return []
+      }
+      if (isClosedPolygon(way)) {
+        return [way]
+      }
+      return [closePolygon(way)]
+    }
+
+    const rings: Array<Array<[number, number]>> = []
+    const remaining = [...ways]
+
+    while (remaining.length > 0) {
+      let currentRing = remaining.shift()!
+
+      if (currentRing.length < 2) {
+        continue
+      }
+
+      let hasConnection = true
+      while (hasConnection && remaining.length > 0) {
+        hasConnection = false
+
+        if (isClosedPolygon(currentRing)) {
+          break
+        }
+
+        const lastPoint = currentRing[currentRing.length - 1]
+
+        for (let i = 0; i < remaining.length; i++) {
+          const nextWay = remaining[i]
+
+          if (nextWay.length < 2) {
+            continue
+          }
+
+          const firstPoint = nextWay[0]
+          const lastPointOfNext = nextWay[nextWay.length - 1]
+
+          if (firstPoint[0] === lastPoint[0] && firstPoint[1] === lastPoint[1]) {
+            currentRing = [...currentRing.slice(0, -1), ...nextWay]
+            remaining.splice(i, 1)
+            hasConnection = true
+            break
+          }
+
+          if (lastPointOfNext[0] === lastPoint[0] && lastPointOfNext[1] === lastPoint[1]) {
+            currentRing = [...currentRing.slice(0, -1), ...nextWay.slice(0, -1).reverse()]
+            remaining.splice(i, 1)
+            hasConnection = true
+            break
+          }
+        }
+      }
+
+      if (currentRing.length >= 3) {
+        if (!isClosedPolygon(currentRing)) {
+          currentRing = closePolygon(currentRing)
+        }
+        rings.push(currentRing)
+      }
+    }
+
+    return rings
+  }
+
   private buildQuery(bbox: BoundingBox): string {
     const queries: string[] = []
 
@@ -464,18 +537,8 @@ out center geom;`
           return null
         }
 
-        const closedOuterWays = outerWays.map((coords) => {
-          if (isClosedPolygon(coords)) {
-            return coords
-          }
-          return closePolygon(coords)
-        })
-        const closedInnerWays = innerWays.map((coords) => {
-          if (isClosedPolygon(coords)) {
-            return coords
-          }
-          return closePolygon(coords)
-        })
+        const closedOuterWays = this.connectAndCloseWays(outerWays)
+        const closedInnerWays = this.connectAndCloseWays(innerWays)
 
         if (closedOuterWays.length === 1 && closedInnerWays.length === 0) {
           return {
