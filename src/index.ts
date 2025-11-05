@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
 import { swaggerSpec } from './config/swagger'
 import { analyzePlaceWebsite } from './controllers/place-analysis.controller'
+import { analyzeUrlSource } from './controllers/url-source.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -130,6 +131,112 @@ app.use('/api', limiter)
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/places/:placeId/analyze', authenticateApiKey, strictLimiter, analyzePlaceWebsite)
+
+/**
+ * @swagger
+ * /api/sources/analyze:
+ *   post:
+ *     summary: Submit a URL to extract and discover nature places
+ *     description: |
+ *       Scrapes a website URL, extracts all mentioned nature places using AI, and:
+ *       - Cross-references against existing places in the database
+ *       - Updates existing places (boost scores, enhance descriptions)
+ *       - Creates entries in places_to_refine for new places
+ *
+ *       Implements Issue #65 (Automated Website Content Extraction) and
+ *       Issue #66 (Method to suggest sources from URLs).
+ *
+ *       This is a resource-intensive operation with strict rate limiting (10 requests/hour).
+ *     tags:
+ *       - Sources
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - url
+ *             properties:
+ *               url:
+ *                 type: string
+ *                 format: uri
+ *                 description: The URL to analyze and extract places from
+ *                 example: https://www.nationalparks.org/explore-parks
+ *               submittedBy:
+ *                 type: string
+ *                 description: Optional identifier of who submitted the URL
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Successful analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 urlSourceId:
+ *                   type: string
+ *                   format: uuid
+ *                 url:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                   enum: [completed, failed]
+ *                 placesFound:
+ *                   type: integer
+ *                 pagesScraped:
+ *                   type: integer
+ *                 newPlaces:
+ *                   type: integer
+ *                   description: Number of new places added to places_to_refine
+ *                 existingPlacesUpdated:
+ *                   type: integer
+ *                   description: Number of existing places that were updated
+ *                 extractedPlaces:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       description:
+ *                         type: string
+ *                       placeType:
+ *                         type: string
+ *                       locationHint:
+ *                         type: string
+ *                       confidence:
+ *                         type: number
+ *                         format: float
+ *       400:
+ *         description: Bad request (missing or invalid URL)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error (scraping failed, AI unavailable, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/sources/analyze', authenticateApiKey, strictLimiter, analyzeUrlSource)
 
 /**
  * @swagger

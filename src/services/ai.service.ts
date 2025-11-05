@@ -339,6 +339,14 @@ export interface PlaceAnalysisResult {
   mentionedPlaces: string[]
 }
 
+export interface ExtractedPlace {
+  name: string
+  description: string
+  placeType: string
+  locationHint: string
+  confidence: number // 0-1 score
+}
+
 /**
  * Analyzes scraped website content to extract a detailed description and mentioned nature places
  * @param placeName The name of the place being analyzed
@@ -437,6 +445,118 @@ Response:`
     return parsed
   } catch (error) {
     console.error('Error analyzing scraped content:', error)
+    return null
+  }
+}
+
+/**
+ * Extracts detailed place information from scraped content
+ * Used for discovering new places mentioned in URLs
+ * @param scrapedContent Combined text content from scraped website pages
+ * @returns Array of extracted places with details, or null if analysis fails
+ */
+export async function extractPlacesFromContent(scrapedContent: string): Promise<ExtractedPlace[] | null> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  const prompt = `You are helping to extract nature and outdoor places from website content for a discovery app.
+
+Website content:
+${scrapedContent.substring(0, 15000)}
+
+Please analyze this content and extract ALL nature places, parks, trails, natural landmarks, or outdoor locations mentioned.
+
+Provide a JSON response with the following structure:
+{
+  "places": [
+    {
+      "name": "Full name of the place",
+      "description": "Brief description (max 500 chars) of what this place is and why it's notable",
+      "placeType": "Type of place: park, trail, forest, mountain, beach, lake, etc.",
+      "locationHint": "Geographic location info: country, region, state, or nearby cities mentioned",
+      "confidence": 0.85
+    }
+  ]
+}
+
+IMPORTANT RULES:
+1. Only include places that are:
+   - Specifically named (not "local parks" or "nearby trails")
+   - Related to nature, outdoors, hiking, wildlife, or recreation
+   - Distinct locations that could have their own database entry
+2. Confidence score (0-1):
+   - 0.9-1.0: Clearly defined with location info
+   - 0.7-0.9: Well mentioned but partial location info
+   - 0.5-0.7: Mentioned but vague details
+   - Below 0.5: Don't include
+3. Extract location hints from context (country, state, region, nearby cities)
+4. If no places found, return: {"places": []}
+5. Return ONLY valid JSON, no additional text
+
+Response:`
+
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+  try {
+    const result = await genAI.models.generateContent({
+      model: MODEL.GEMMA,
+      contents: contents,
+    })
+
+    let responseText: string
+    try {
+      responseText = extractResponseText(result).trim()
+    } catch (extractError) {
+      console.warn('First attempt failed, retrying...')
+
+      const fallbackResult = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+
+      responseText = extractResponseText(fallbackResult).trim()
+    }
+
+    if (!responseText) {
+      console.log('❌ AI returned empty response')
+      return null
+    }
+
+    // Try to extract JSON from response
+    let jsonText = responseText
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[0]
+    }
+
+    // Parse JSON response
+    const parsed = JSON.parse(jsonText) as { places: ExtractedPlace[] }
+
+    // Validate response
+    if (!parsed.places || !Array.isArray(parsed.places)) {
+      console.log('❌ AI returned invalid structure')
+      return null
+    }
+
+    // Filter and validate places
+    const validPlaces = parsed.places.filter((place) => {
+      return (
+        place.name &&
+        place.name.length > 0 &&
+        place.confidence >= 0.5 &&
+        place.placeType &&
+        place.description &&
+        place.locationHint
+      )
+    })
+
+    console.log(`✅ Extracted ${validPlaces.length} places from content`)
+
+    return validPlaces.length > 0 ? validPlaces : null
+  } catch (error) {
+    console.error('Error extracting places from content:', error)
     return null
   }
 }
