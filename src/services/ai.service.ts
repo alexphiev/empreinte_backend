@@ -333,3 +333,110 @@ export async function summarizeWikipediaContent(placeName: string, wikipediaCont
     return null
   }
 }
+
+export interface PlaceAnalysisResult {
+  description: string
+  mentionedPlaces: string[]
+}
+
+/**
+ * Analyzes scraped website content to extract a detailed description and mentioned nature places
+ * @param placeName The name of the place being analyzed
+ * @param scrapedContent The combined text content from scraped website pages
+ * @returns An object with description (max 2000 chars) and array of mentioned places, or null if analysis fails
+ */
+export async function analyzeScrapedContent(
+  placeName: string,
+  scrapedContent: string,
+): Promise<PlaceAnalysisResult | null> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  const prompt = `You are helping to analyze nature and outdoor places for a discovery app.
+
+Place name: ${placeName}
+Scraped website content: ${scrapedContent.substring(0, 15000)}
+
+Please analyze this content and provide a JSON response with the following structure:
+{
+  "description": "A detailed, engaging description of this place (maximum 2000 characters). Focus on what makes this place special, key activities, visitor information, natural features, and why someone would want to visit. Only include relevant information for nature/outdoor enthusiasts.",
+  "mentionedPlaces": ["Array of other nature places, parks, trails, or natural landmarks mentioned in the content that would be worth having in our database. Only include places that are specifically named and relevant to nature/outdoor activities. Return empty array if none found."]
+}
+
+IMPORTANT RULES:
+1. The description must be engaging, informative, and focused on nature/outdoor activities
+2. Maximum 2000 characters for description
+3. Only include mentioned places that are:
+   - Specifically named (not generic references like "nearby parks")
+   - Related to nature, outdoors, hiking, wildlife, or similar activities
+   - Distinct places that could have their own database entry
+4. If the content is not relevant or insufficient, return: {"description": "NO_RELEVANT_INFO", "mentionedPlaces": []}
+5. Return ONLY valid JSON, no additional text
+
+Response:`
+
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+  try {
+    const result = await genAI.models.generateContent({
+      model: MODEL.GEMMA,
+      contents: contents,
+    })
+
+    let responseText: string
+    try {
+      responseText = extractResponseText(result).trim()
+    } catch (extractError) {
+      console.warn('First attempt failed, retrying without grounding tools...')
+
+      const fallbackResult = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+
+      responseText = extractResponseText(fallbackResult).trim()
+    }
+
+    if (!responseText) {
+      console.log('❌ AI returned empty response')
+      return null
+    }
+
+    // Try to extract JSON from response (handle cases where AI adds extra text)
+    let jsonText = responseText
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[0]
+    }
+
+    // Parse JSON response
+    const parsed = JSON.parse(jsonText) as PlaceAnalysisResult
+
+    // Validate response
+    if (!parsed.description || parsed.description === 'NO_RELEVANT_INFO') {
+      console.log('❌ AI returned no relevant info')
+      return null
+    }
+
+    // Ensure description is within limit
+    if (parsed.description.length > 2000) {
+      parsed.description = parsed.description.substring(0, 1997) + '...'
+    }
+
+    // Ensure mentionedPlaces is an array
+    if (!Array.isArray(parsed.mentionedPlaces)) {
+      parsed.mentionedPlaces = []
+    }
+
+    console.log(
+      `✅ AI analysis successful: ${parsed.description.length} chars, ${parsed.mentionedPlaces.length} mentioned places`,
+    )
+
+    return parsed
+  } catch (error) {
+    console.error('Error analyzing scraped content:', error)
+    return null
+  }
+}
