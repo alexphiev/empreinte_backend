@@ -20,10 +20,12 @@ export type Database = {
           created_at: string
           description: string | null
           enhancement_score: number | null
-          geometry: unknown | null
+          geometry: unknown
           id: string
           last_enhanced_at: string | null
-          location: unknown | null
+          last_website_analyzed_at: string | null
+          last_wikipedia_analyzed_at: string | null
+          location: unknown
           metadata: Json | null
           name: string | null
           osm_id: string | null
@@ -39,8 +41,10 @@ export type Database = {
           updated_at: string | null
           website: string | null
           website_generated: string | null
+          website_places_generated: string[] | null
           website_raw: string | null
           wikipedia_generated: string | null
+          wikipedia_places_generated: string[] | null
           wikipedia_query: string | null
           wikipedia_raw: string | null
         }
@@ -49,10 +53,12 @@ export type Database = {
           created_at?: string
           description?: string | null
           enhancement_score?: number | null
-          geometry?: unknown | null
+          geometry?: unknown
           id?: string
           last_enhanced_at?: string | null
-          location?: unknown | null
+          last_website_analyzed_at?: string | null
+          last_wikipedia_analyzed_at?: string | null
+          location?: unknown
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
@@ -68,8 +74,10 @@ export type Database = {
           updated_at?: string | null
           website?: string | null
           website_generated?: string | null
+          website_places_generated?: string[] | null
           website_raw?: string | null
           wikipedia_generated?: string | null
+          wikipedia_places_generated?: string[] | null
           wikipedia_query?: string | null
           wikipedia_raw?: string | null
         }
@@ -78,10 +86,12 @@ export type Database = {
           created_at?: string
           description?: string | null
           enhancement_score?: number | null
-          geometry?: unknown | null
+          geometry?: unknown
           id?: string
           last_enhanced_at?: string | null
-          location?: unknown | null
+          last_website_analyzed_at?: string | null
+          last_wikipedia_analyzed_at?: string | null
+          location?: unknown
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
@@ -97,8 +107,10 @@ export type Database = {
           updated_at?: string | null
           website?: string | null
           website_generated?: string | null
+          website_places_generated?: string[] | null
           website_raw?: string | null
           wikipedia_generated?: string | null
+          wikipedia_places_generated?: string[] | null
           wikipedia_query?: string | null
           wikipedia_raw?: string | null
         }
@@ -235,6 +247,56 @@ export type Database = {
           name: string
           source: string
           type: string
+        }[]
+      }
+      search_places_by_location: {
+        Args: {
+          min_score?: number
+          radius_km: number
+          result_limit?: number
+          search_lat: number
+          search_lng: number
+        }
+        Returns: {
+          country: string
+          description: string
+          distance_km: number
+          id: string
+          lat: number
+          long: number
+          metadata: Json
+          name: string
+          region: string
+          score: number
+          source: string
+          type: string
+          website: string
+          wikipedia_query: string
+        }[]
+      }
+      search_places_in_view: {
+        Args: {
+          max_lat: number
+          max_long: number
+          max_results: number
+          min_lat: number
+          min_long: number
+          min_score: number
+        }
+        Returns: {
+          country: string
+          description: string
+          id: string
+          lat: number
+          long: number
+          metadata: Json
+          name: string
+          region: string
+          score: number
+          source: string
+          type: string
+          website: string
+          wikipedia_query: string
         }[]
       }
     }

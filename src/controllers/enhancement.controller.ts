@@ -176,7 +176,11 @@ export class EnhancementController {
       try {
         console.log(`📚 Enhancing Wikipedia info...`)
 
-        let wikipediaResult: { summary: string | null; rawContent: string | null } | null = null
+        let wikipediaResult: {
+          summary: string | null
+          rawContent: string | null
+          mentionedPlaces: string[]
+        } | null = null
 
         // First check if place has a wikipedia field in metadata
         const metadata = place.metadata as any
@@ -205,6 +209,12 @@ export class EnhancementController {
             // AI failed but we have raw content - store a placeholder and let AI retry later
             updates.wikipedia_generated = null // Don't set to "not found" - leave for retry
             console.log(`⚠️ Wikipedia content found but AI processing failed - stored raw content for later retry`)
+          }
+
+          // Save mentioned places if any were extracted
+          if (wikipediaResult.mentionedPlaces && wikipediaResult.mentionedPlaces.length > 0) {
+            updates.wikipedia_places_generated = wikipediaResult.mentionedPlaces
+            console.log(`✅ Saved ${wikipediaResult.mentionedPlaces.length} mentioned places from Wikipedia`)
           }
 
           if (wikipediaResult.rawContent) {
