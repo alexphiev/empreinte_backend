@@ -14,19 +14,13 @@ export async function verifyPlaces(
   res: Response<PlaceVerificationResponse | { error: string }>,
 ): Promise<void> {
   try {
-    const { sourceId, generatedPlaceId, scoreBump, limit } = req.body
-
-    if (!sourceId && !generatedPlaceId) {
-      res.status(400).json({ error: 'Either sourceId or generatedPlaceId must be provided' })
-      return
-    }
+    const { generatedPlaceId, scoreBump, limit } = req.body
 
     console.log(`\n🔍 Starting place verification`)
-    if (sourceId) {
-      console.log(`   Source ID: ${sourceId}`)
-    }
     if (generatedPlaceId) {
       console.log(`   Generated Place ID: ${generatedPlaceId}`)
+    } else {
+      console.log(`   Verifying all generated places without status (sorted by oldest created_at)`)
     }
     if (scoreBump) {
       console.log(`   Score bump: ${scoreBump}`)
@@ -36,7 +30,6 @@ export async function verifyPlaces(
     }
 
     const { results, error } = await verifyPlacesCore({
-      sourceId,
       generatedPlaceId,
       scoreBump: scoreBump || 2,
       limit: limit ? parseInt(String(limit), 10) : undefined,

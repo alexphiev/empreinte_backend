@@ -107,6 +107,31 @@ export async function getGeneratedPlacesBySourceId(sourceId: string): Promise<Ge
 }
 
 /**
+ * Get all generated places without a status, sorted by oldest created_at first
+ * @param limit Optional limit on number of places to return
+ */
+export async function getGeneratedPlacesWithoutStatus(limit?: number): Promise<GeneratedPlace[]> {
+  let query = supabase
+    .from('generated_places')
+    .select('*')
+    .is('status', null)
+    .order('created_at', { ascending: true })
+
+  if (limit) {
+    query = query.limit(limit)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error(`❌ Error fetching generated places without status:`, error)
+    return []
+  }
+
+  return data || []
+}
+
+/**
  * Update a generated place
  */
 export async function updateGeneratedPlace(

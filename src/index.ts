@@ -318,7 +318,8 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *       - Creates new places in the database if not found
  *       - Updates existing places by bumping their score
  *
- *       Can verify all places from a source, or a single generated place.
+ *       By default, verifies all generated places without a status, sorted by oldest created_at first.
+ *       Can optionally verify a single generated place by ID, or limit the number of places to verify.
  *       Places are matched by name similarity, and scores are increased based on the source.
  *     tags:
  *       - Places
@@ -331,14 +332,10 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *           schema:
  *             type: object
  *             properties:
- *               sourceId:
- *                 type: string
- *                 format: uuid
- *                 description: Source ID to verify all generated places from
  *               generatedPlaceId:
  *                 type: string
  *                 format: uuid
- *                 description: Single generated place ID to verify
+ *                 description: Optional. Single generated place ID to verify. If not provided, verifies all places without status.
  *               scoreBump:
  *                 type: number
  *                 default: 2
@@ -346,12 +343,8 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *               limit:
  *                 type: number
  *                 minimum: 1
- *                 description: Maximum number of places to verify (only applies when using sourceId)
- *             oneOf:
- *               - required: [sourceId]
- *               - required: [generatedPlaceId]
+ *                 description: Maximum number of places to verify (only applies when verifying all places, sorted by oldest created_at)
  *           example:
- *             sourceId: "123e4567-e89b-12d3-a456-426614174000"
  *             scoreBump: 2
  *             limit: 10
  *     responses:
@@ -374,7 +367,7 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *                         type: string
  *                       status:
  *                         type: string
- *                         enum: [ADDED, NO_MATCH, MULTIPLE_MATCHES]
+ *                         enum: [ADDED, NO_MATCH, NO_NATURE_MATCH, MULTIPLE_MATCHES]
  *                         description: Verification status
  *                       placeId:
  *                         type: string
@@ -387,7 +380,7 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *                         type: string
  *                         nullable: true
  *       400:
- *         description: Bad request (missing sourceId or generatedPlaceId)
+ *         description: Bad request
  *         content:
  *           application/json:
  *             schema:

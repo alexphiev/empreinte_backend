@@ -1,4 +1,4 @@
-import { getGeneratedPlacesBySourceId, updateGeneratedPlace } from '../db/generated-places'
+import { getGeneratedPlacesWithoutStatus, updateGeneratedPlace } from '../db/generated-places'
 import { updatePlace } from '../db/places'
 import { getSourceById } from '../db/sources'
 import { supabase } from '../services/supabase.service'
@@ -8,6 +8,7 @@ import { overpassService } from './overpass.service'
 export enum VerificationStatus {
   ADDED = 'ADDED',
   NO_MATCH = 'NO_MATCH',
+  NO_NATURE_MATCH = 'NO_NATURE_MATCH',
   MULTIPLE_MATCHES = 'MULTIPLE_MATCHES',
 }
 
@@ -21,7 +22,6 @@ export interface VerificationResult {
 }
 
 export interface VerificationOptions {
-  sourceId?: string
   generatedPlaceId?: string
   scoreBump?: number
   limit?: number
@@ -45,8 +45,17 @@ async function searchAndCreatePlace(
 }> {
   try {
     // Search OSM for the place
-    const osmElements = await overpassService.searchPlaceByName(placeName)
+    const searchResult = await overpassService.searchPlaceByName(placeName)
 
+    // Check if Nominatim found results but none were nature places
+    if (searchResult.noNatureMatch) {
+      return {
+        status: VerificationStatus.NO_NATURE_MATCH,
+        error: 'Place found in OSM but is not a nature place',
+      }
+    }
+
+    const osmElements = searchResult.elements
     if (!osmElements || osmElements.length === 0) {
       return { status: VerificationStatus.NO_MATCH, error: 'Place not found in OSM' }
     }
@@ -179,17 +188,14 @@ export async function verifyPlacesCore(
   options: VerificationOptions = {},
 ): Promise<{ results: VerificationResult[]; error: string | null }> {
   try {
-    const { sourceId, generatedPlaceId, scoreBump = 2 } = options
+    const { generatedPlaceId, scoreBump = 2, limit } = options
 
-    if (!sourceId && !generatedPlaceId) {
-      return {
-        results: [],
-        error: 'Either sourceId or generatedPlaceId must be provided',
-      }
-    }
-
-    let generatedPlaces: Array<{ id: string; name: string; description: string | null; source_id: string }> = []
-    let sourceUrl = 'unknown'
+    let generatedPlaces: Array<{
+      id: string
+      name: string
+      description: string | null
+      source_id: string
+    }> = []
 
     if (generatedPlaceId) {
       // Verify a single generated place
@@ -222,12 +228,6 @@ export async function verifyPlacesCore(
         }
       }
 
-      // Get source URL
-      const sourceResponse = await getSourceById(place.source_id)
-      if (sourceResponse.data) {
-        sourceUrl = sourceResponse.data.url
-      }
-
       generatedPlaces = [
         {
           id: place.id,
@@ -236,21 +236,12 @@ export async function verifyPlacesCore(
           source_id: place.source_id,
         },
       ]
-    } else if (sourceId) {
-      // Verify all places for a source
-      const sourceResponse = await getSourceById(sourceId)
-      if (sourceResponse.error || !sourceResponse.data) {
-        return {
-          results: [],
-          error: `Source not found: ${sourceId}`,
-        }
-      }
-
-      sourceUrl = sourceResponse.data.url
-      const places = await getGeneratedPlacesBySourceId(sourceId)
-      // Only process places without a status (null status) and with required fields
+    } else {
+      // Get all generated places without status, sorted by oldest created_at first
+      const places = await getGeneratedPlacesWithoutStatus(limit)
+      // Filter places with required fields
       generatedPlaces = places
-        .filter((p) => !p.status && p.name && p.source_id)
+        .filter((p) => p.name && p.source_id)
         .map((p) => ({
           id: p.id,
           name: p.name!,
@@ -266,20 +257,20 @@ export async function verifyPlacesCore(
       }
     }
 
-    // Apply limit if specified
-    const limit = options.limit
-    const placesToVerify = limit ? generatedPlaces.slice(0, limit) : generatedPlaces
-
-    if (limit && generatedPlaces.length > limit) {
-      console.log(`\n⚠️  Limiting verification to ${limit} places (${generatedPlaces.length} total places available)`)
+    if (limit && !generatedPlaceId) {
+      console.log(`\n⚠️  Limiting verification to ${limit} places (sorted by oldest created_at)`)
     }
 
-    console.log(`\n🔍 Verifying ${placesToVerify.length} generated place(s) (without status)...`)
+    console.log(`\n🔍 Verifying ${generatedPlaces.length} generated place(s) (without status)...`)
 
     const results: VerificationResult[] = []
 
-    for (const generatedPlace of placesToVerify) {
+    for (const generatedPlace of generatedPlaces) {
       console.log(`\n--- Verifying: ${generatedPlace.name} ---`)
+
+      // Get source URL for this place
+      const sourceResponse = await getSourceById(generatedPlace.source_id)
+      const sourceUrl = sourceResponse.data?.url || 'unknown'
 
       const verification = await searchAndCreatePlace(
         generatedPlace.name,
