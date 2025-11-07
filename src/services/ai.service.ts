@@ -340,7 +340,307 @@ export interface PlaceAnalysisResult {
 }
 
 /**
+ * Uses LLM to filter which sitemap URLs are most relevant for scraping
+ * @param placeName The name of the place being analyzed
+ * @param sitemapUrls Array of URLs from the sitemap
+ * @param maxUrls Maximum number of URLs to return (default: 10)
+ * @param country Optional country code (e.g., "France") to prioritize language-specific pages
+ * @returns Array of filtered URLs that are most relevant
+ */
+export async function filterRelevantSitemapUrls(
+  placeName: string,
+  sitemapUrls: string[],
+  maxUrls: number = 10,
+  country?: string | null,
+): Promise<string[]> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  // If we have fewer URLs than max, return all
+  if (sitemapUrls.length <= maxUrls) {
+    return sitemapUrls
+  }
+
+  console.log(`🤖 Using LLM to filter ${sitemapUrls.length} sitemap URLs down to ${maxUrls} most relevant...`)
+
+  const urlsList = sitemapUrls.map((url, index) => `${index + 1}. ${url}`).join('\n')
+
+  // Language preference based on country
+  const languageNote =
+    country === 'France'
+      ? '\n\nIMPORTANT: This place is located in France. STRONGLY prioritize French-language pages (URLs containing /fr/, /french/, or French language indicators). Exclude English or other language pages unless no French alternatives exist.'
+      : ''
+
+  const prompt = `You are helping to analyze a nature and outdoor place website for a discovery app.
+
+Place name: ${placeName}${country ? `\nCountry: ${country}` : ''}
+Sitemap URLs found: ${sitemapUrls.length} URLs${languageNote}
+
+Here are the URLs from the sitemap:
+${urlsList}
+
+Please analyze these URLs and select the ${maxUrls} most relevant pages that would contain useful information about this nature/outdoor place. Prioritize pages in this order:
+
+1. **Nature-related pages** - Pages specifically about natural features, landscapes, wildlife, ecosystems
+2. **Informational pages describing the place** - Overview pages, about pages, place descriptions, what to see/do
+3. **Visitor guides and tips** - Pages with tips on how to visit, enjoy, and experience the place (trail guides, visiting tips, best practices, what to bring, when to visit)
+
+Focus on pages that likely contain:
+- Detailed descriptions of the place and its natural features
+- Information about activities available (hiking, wildlife viewing, photography, etc.)
+- Visitor information (hours, fees, access, parking, facilities)
+- Tips and guides for visiting (what to bring, best times to visit, trail recommendations)
+- Natural attractions and points of interest
+- Safety information and regulations
+
+Avoid pages like:
+- Legal/terms pages
+- Privacy policy
+- Generic blog posts not specifically about the place
+- Contact forms
+- Shopping/cart pages
+- News archives or press releases
+- Generic information pages
+- Pages about other places or unrelated topics
+
+Return ONLY a JSON array of the selected URLs (exactly ${maxUrls} URLs), in order of relevance. Format:
+["url1", "url2", "url3", ...]
+
+Response:`
+
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+  try {
+    const result = await genAI.models.generateContent({
+      model: MODEL.GEMMA,
+      contents: contents,
+    })
+
+    let responseText: string
+    try {
+      responseText = extractResponseText(result).trim()
+    } catch (extractError) {
+      console.warn('First attempt failed, retrying without grounding tools...', extractError)
+      const fallbackResult = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+      responseText = extractResponseText(fallbackResult).trim()
+    }
+
+    if (!responseText) {
+      console.warn('❌ LLM returned empty response, using first N URLs')
+      return sitemapUrls.slice(0, maxUrls)
+    }
+
+    // Try to extract JSON array from response
+    let jsonText = responseText
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[0]
+    }
+
+    const parsed = JSON.parse(jsonText) as string[]
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      console.warn('❌ LLM returned invalid format, using first N URLs')
+      return sitemapUrls.slice(0, maxUrls)
+    }
+
+    // Validate URLs exist in original list
+    const validUrls = parsed.filter((url) => sitemapUrls.includes(url))
+    if (validUrls.length === 0) {
+      console.warn('❌ LLM returned URLs not in original list, using first N URLs')
+      return sitemapUrls.slice(0, maxUrls)
+    }
+
+    console.log(`✅ LLM filtered to ${validUrls.length} relevant URLs`)
+    return validUrls.slice(0, maxUrls)
+  } catch (error) {
+    console.error('Error filtering sitemap URLs with LLM:', error)
+    console.warn('⚠️ Falling back to first N URLs')
+    return sitemapUrls.slice(0, maxUrls)
+  }
+}
+
+/**
+ * Summarizes scraped website content, keeping only relevant information about the place
+ * @param placeName The name of the place being analyzed
+ * @param scrapedContent The combined text content from scraped website pages
+ * @returns Summary string focused on nature features and relevant information, or null if analysis fails
+ */
+export async function summarizeScrapedContent(placeName: string, scrapedContent: string): Promise<string | null> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  const prompt = `You are helping to analyze nature and outdoor places for a discovery app.
+
+Place name: ${placeName}
+Scraped website content: ${scrapedContent.substring(0, 30000)}
+
+Please analyze this content and provide a COMPREHENSIVE, DETAILED summary that includes ALL relevant information for nature/outdoor enthusiasts visiting this place. 
+
+**TARGET LENGTH: Aim for close to 2000 characters** - this is NOT a brief summary. You should extract and synthesize ALL relevant information from the content. The summary should be thorough, informative, and complete, covering:
+
+1. **Natural Features & Landscapes**: Describe the natural environment, geography, ecosystems, flora, fauna, geological features, biodiversity, unique natural characteristics
+2. **History & Significance**: Historical context, cultural importance, designation status (national park, nature reserve, etc.), any notable historical events or figures associated with the place
+3. **Activities & Experiences**: ALL available activities (hiking, wildlife viewing, photography, camping, birdwatching, etc.), specific trails, routes, viewpoints, guided tours, educational programs
+4. **Access & Practicality**: 
+   - How to get there (detailed directions, transportation options, GPS coordinates if mentioned)
+   - Opening hours and seasons (when accessible, best seasons)
+   - Fees and permits (entry fees, parking fees, required permits)
+   - Parking and facilities (parking locations, restrooms, visitor centers, picnic areas)
+   - Accessibility information (wheelchair access, difficulty levels)
+5. **Visitor Information**: 
+   - Best times to visit (seasons, times of day, weather considerations)
+   - What to bring (recommended equipment, clothing, supplies)
+   - Safety considerations (hazards, weather warnings, wildlife precautions)
+   - Regulations and rules (what's allowed/prohibited, protected areas)
+   - Contact information if relevant (visitor center, park office, emergency contacts)
+6. **Notable Attractions**: Specific points of interest, landmarks, viewpoints, trails, areas to explore, must-see features
+7. **What Makes It Special**: Unique features, why visitors should come here, what sets this place apart
+
+**CRITICAL INSTRUCTIONS:**
+- **LENGTH REQUIREMENT**: Generate a comprehensive summary aiming for 1500-2000 characters. This is NOT a brief 400-character summary. Extract ALL relevant information.
+- **COMPLETENESS**: Include as much relevant detail as possible. If you have 70,000 characters of content, extract the most important and relevant information to create a rich, informative summary.
+- **RELEVANCE**: Only exclude truly irrelevant information (legal disclaimers, generic website boilerplate, navigation menus, cookie notices). Include ALL information about the place itself, its features, activities, access, history, and visitor information.
+- **QUALITY**: Write in an engaging, informative style suitable for nature enthusiasts. Use complete sentences and proper structure.
+- **SCOPE**: Focus ONLY on information about "${placeName}" - do NOT include information about other places mentioned in the content.
+- **NO SHORT SUMMARIES**: Do NOT return a brief summary saying "no relevant information" if there is ANY content about the place. Extract and synthesize the information that exists.
+
+If the content contains relevant information about the place (which it should, since it was scraped from the place's website), provide a comprehensive summary. Only return "NO_RELEVANT_INFO" if the content is completely unrelated to the place (e.g., completely different website, error pages, etc.).
+
+Response (comprehensive summary only, no JSON, aim for 1500-2000 characters):`
+
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+  try {
+    const result = await genAI.models.generateContent({
+      model: MODEL.GEMMA,
+      contents: contents,
+    })
+
+    let responseText: string
+    try {
+      responseText = extractResponseText(result).trim()
+    } catch (extractError) {
+      console.warn('First attempt failed, retrying without grounding tools...', extractError)
+      const fallbackResult = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+      responseText = extractResponseText(fallbackResult).trim()
+    }
+
+    if (!responseText || responseText === 'NO_RELEVANT_INFO') {
+      console.log('❌ AI returned no relevant info or empty response')
+      return null
+    }
+
+    console.log(`✅ Summarization successful: ${responseText.length} characters`)
+    return responseText
+  } catch (error) {
+    console.error('Error summarizing scraped content:', error)
+    return null
+  }
+}
+
+/**
+ * Extracts mentioned nature places from scraped website content
+ * @param placeName The name of the place being analyzed
+ * @param scrapedContent The combined text content from scraped website pages
+ * @returns Array of nature place names mentioned in the content, or empty array if none found
+ */
+export async function extractMentionedPlaces(placeName: string, scrapedContent: string): Promise<string[]> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  const prompt = `You are helping to analyze nature and outdoor places for a discovery app.
+
+Place name: ${placeName}
+Scraped website content: ${scrapedContent.substring(0, 15000)}
+
+Please analyze this content and extract ONLY the names of other nature places, parks, trails, or natural landmarks that are mentioned. These should be:
+- Specifically named places (not generic references like "nearby parks")
+- Related to nature, outdoors, hiking, wildlife, or similar activities
+- Distinct places that could have their own database entry
+- NOT the place itself (${placeName})
+
+Return ONLY a JSON array of place names. Format:
+["Place Name 1", "Place Name 2", "Place Name 3"]
+
+If no relevant places are found, return an empty array: []
+
+IMPORTANT:
+- Only include nature/outdoor places
+- Use the exact names as mentioned in the content
+- Remove duplicates
+- Return ONLY valid JSON array, no additional text
+
+Response:`
+
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+  try {
+    const result = await genAI.models.generateContent({
+      model: MODEL.GEMMA,
+      contents: contents,
+    })
+
+    let responseText: string
+    try {
+      responseText = extractResponseText(result).trim()
+    } catch (extractError) {
+      console.warn('First attempt failed, retrying without grounding tools...', extractError)
+      const fallbackResult = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+      responseText = extractResponseText(fallbackResult).trim()
+    }
+
+    if (!responseText) {
+      console.log('❌ AI returned empty response')
+      return []
+    }
+
+    // Try to extract JSON array from response
+    let jsonText = responseText
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[0]
+    }
+
+    const parsed = JSON.parse(jsonText) as string[]
+
+    if (!Array.isArray(parsed)) {
+      console.warn('❌ AI returned invalid format, returning empty array')
+      return []
+    }
+
+    // Filter out empty strings and normalize
+    const places = parsed
+      .filter((place) => typeof place === 'string' && place.trim().length > 0)
+      .map((place) => place.trim())
+      .filter((place) => place.toLowerCase() !== placeName.toLowerCase()) // Remove the place itself
+
+    console.log(`✅ Extracted ${places.length} mentioned places`)
+    return places
+  } catch (error) {
+    console.error('Error extracting mentioned places:', error)
+    return []
+  }
+}
+
+/**
  * Analyzes scraped website content to extract a detailed description and mentioned nature places
+ * @deprecated Use summarizeScrapedContent and extractMentionedPlaces separately instead
  * @param placeName The name of the place being analyzed
  * @param scrapedContent The combined text content from scraped website pages
  * @returns An object with description (max 2000 chars) and array of mentioned places, or null if analysis fails

@@ -1,34 +1,27 @@
 import * as cheerio from 'cheerio'
-import { Readable } from 'stream'
+import { filterRelevantSitemapUrls } from './ai.service'
 
 interface ScrapedPage {
   url: string
   text: string
 }
 
-interface SitemapItem {
-  url?: string
-  [key: string]: unknown
-}
-
 export class DeepWebsiteScraperService {
-  private readonly MAX_PAGES = 20 // Limit to avoid overwhelming the target site
+  private readonly MAX_PAGES = 10 // Limit to avoid overwhelming the target site and keep content focused
   private readonly TIMEOUT_MS = 10000
   private readonly USER_AGENT = 'Mozilla/5.0 (compatible; EmpreinteBot/1.0; Nature Places Data Enhancement)'
 
   /**
    * Fetches and parses a sitemap from a website
+   * @param placeName Optional place name for LLM filtering when >10 URLs found
+   * @param country Optional country to prioritize language-specific pages
    */
-  private async fetchSitemap(baseUrl: string): Promise<string[] | null> {
+  private async fetchSitemap(baseUrl: string, placeName?: string, country?: string | null): Promise<string[] | null> {
     try {
       console.log(`🗺️  Attempting to fetch sitemap from: ${baseUrl}`)
 
       // Common sitemap locations
-      const sitemapUrls = [
-        `${baseUrl}/sitemap.xml`,
-        `${baseUrl}/sitemap_index.xml`,
-        `${baseUrl}/sitemap`,
-      ]
+      const sitemapUrls = [`${baseUrl}/sitemap.xml`, `${baseUrl}/sitemap_index.xml`, `${baseUrl}/sitemap`]
 
       for (const sitemapUrl of sitemapUrls) {
         try {
@@ -44,7 +37,70 @@ export class DeepWebsiteScraperService {
 
           if (urls.length > 0) {
             console.log(`✅ Found sitemap with ${urls.length} URLs at ${sitemapUrl}`)
-            return urls.slice(0, this.MAX_PAGES)
+
+            // Step 1: Pre-filter by language if country is France - STRICTLY French pages only
+            // This ensures we filter by language FIRST, before LLM relevance filtering
+            let filteredUrls = urls
+            if (country === 'France') {
+              const frenchUrls = urls.filter((url) => {
+                const lowerUrl = url.toLowerCase()
+
+                // Check for explicit French language indicators
+                const isFrench =
+                  lowerUrl.includes('/fr/') ||
+                  lowerUrl.includes('/french/') ||
+                  lowerUrl.includes('/francais/') ||
+                  lowerUrl.includes('/fr-') ||
+                  lowerUrl.includes('?lang=fr') ||
+                  lowerUrl.includes('&lang=fr') ||
+                  lowerUrl.includes('?locale=fr') ||
+                  lowerUrl.includes('&locale=fr')
+
+                // Check for explicit English language indicators
+                const isEnglish =
+                  lowerUrl.includes('/en/') ||
+                  lowerUrl.includes('/english/') ||
+                  lowerUrl.includes('/en-') ||
+                  lowerUrl.includes('?lang=en') ||
+                  lowerUrl.includes('&lang=en') ||
+                  lowerUrl.includes('?locale=en') ||
+                  lowerUrl.includes('&locale=en')
+
+                // Check for other language codes (2-letter codes like /de/, /es/, /it/, etc.)
+                // but exclude /fr/ and locale codes like /fr-fr/
+                const languageCodeMatch = lowerUrl.match(/\/([a-z]{2})(\/|$)/)
+                const isOtherLanguage =
+                  languageCodeMatch && languageCodeMatch[1] !== 'fr' && !lowerUrl.match(/\/[a-z]{2}-[a-z]{2}\//) // Exclude locale codes
+
+                // For France, exclude English and other languages
+                if (isEnglish || (isOtherLanguage && !isFrench)) {
+                  return false
+                }
+
+                // Include if explicitly French or if no language indicator (assume French for French sites)
+                return isFrench || (!isEnglish && !isOtherLanguage)
+              })
+
+              if (frenchUrls.length > 0) {
+                console.log(`🇫🇷 Language filter: ${frenchUrls.length} French pages (from ${urls.length} total)`)
+                filteredUrls = frenchUrls
+              } else {
+                console.log(`⚠️  No French pages found in sitemap, will use LLM filtering with French preference`)
+              }
+            }
+
+            // Step 2: If still more than MAX_PAGES URLs, use LLM to filter the most relevant ones
+            // This runs on the already language-filtered list (if France) or original list (otherwise)
+            if (filteredUrls.length > this.MAX_PAGES && placeName) {
+              console.log(
+                `🤖 ${filteredUrls.length} URLs remaining, using LLM to filter to ${this.MAX_PAGES} most relevant...`,
+              )
+              const llmFilteredUrls = await filterRelevantSitemapUrls(placeName, filteredUrls, this.MAX_PAGES, country)
+              return llmFilteredUrls
+            }
+
+            // Step 3: If we have <= MAX_PAGES URLs, return them (already language-filtered if France)
+            return filteredUrls.slice(0, this.MAX_PAGES)
           }
         } catch (error) {
           // Try next sitemap location
@@ -126,9 +182,7 @@ export class DeepWebsiteScraperService {
 
     // Remove unwanted elements
     $('script, style, nav, header, footer, aside, iframe, noscript, form').remove()
-    $(
-      '.menu, .navigation, .sidebar, .ad, .advertisement, .cookie-banner, .social-share, .comments',
-    ).remove()
+    $('.menu, .navigation, .sidebar, .ad, .advertisement, .cookie-banner, .social-share, .comments').remove()
 
     // Try semantic HTML5 first
     const contentSelectors = [
@@ -192,8 +246,15 @@ export class DeepWebsiteScraperService {
   /**
    * Main method: Scrapes multiple pages from a website using sitemap
    * Returns combined text content from all pages
+   * @param websiteUrl The website URL to scrape
+   * @param placeName Optional place name for LLM filtering when sitemap has >20 pages
+   * @param country Optional country to filter language-specific pages (e.g., "France" for French-only)
    */
-  public async scrapeWebsiteDeep(websiteUrl: string): Promise<string | null> {
+  public async scrapeWebsiteDeep(
+    websiteUrl: string,
+    placeName?: string,
+    country?: string | null,
+  ): Promise<string | null> {
     try {
       console.log(`🔍 Starting deep scrape for: ${websiteUrl}`)
 
@@ -206,10 +267,40 @@ export class DeepWebsiteScraperService {
       const pages: ScrapedPage[] = []
 
       // Try to get sitemap URLs
-      const sitemapUrls = await this.fetchSitemap(baseUrl)
+      const sitemapUrls = await this.fetchSitemap(baseUrl, placeName, country)
 
       // Determine which URLs to scrape
-      const urlsToScrape = sitemapUrls && sitemapUrls.length > 0 ? sitemapUrls : [websiteUrl]
+      let urlsToScrape = sitemapUrls && sitemapUrls.length > 0 ? sitemapUrls : [websiteUrl]
+
+      // Additional language filtering for France: filter out non-French pages from final list
+      if (country === 'France' && urlsToScrape.length > 0) {
+        const frenchUrls = urlsToScrape.filter((url) => {
+          const lowerUrl = url.toLowerCase()
+          // Exclude English pages
+          const isEnglish =
+            lowerUrl.includes('/en/') ||
+            lowerUrl.includes('/english/') ||
+            lowerUrl.includes('/en-') ||
+            lowerUrl.includes('?lang=en') ||
+            lowerUrl.includes('&lang=en')
+
+          // Include French pages or pages without language indicators (likely French for French sites)
+          const isFrench =
+            lowerUrl.includes('/fr/') ||
+            lowerUrl.includes('/french/') ||
+            lowerUrl.includes('/francais/') ||
+            lowerUrl.includes('/fr-') ||
+            lowerUrl.includes('?lang=fr') ||
+            lowerUrl.includes('&lang=fr')
+
+          return !isEnglish && (isFrench || (!lowerUrl.match(/\/[a-z]{2}\//) && !lowerUrl.match(/[?&]lang=/)))
+        })
+
+        if (frenchUrls.length > 0) {
+          urlsToScrape = frenchUrls
+          console.log(`🇫🇷 Final language filter: ${urlsToScrape.length} French pages selected`)
+        }
+      }
 
       console.log(`📄 Will scrape ${urlsToScrape.length} pages`)
 
@@ -243,9 +334,7 @@ export class DeepWebsiteScraperService {
         })
         .join('\n')
 
-      console.log(
-        `✅ Deep scrape complete: ${pages.length} pages, ${combinedText.length} total characters`,
-      )
+      console.log(`✅ Deep scrape complete: ${pages.length} pages, ${combinedText.length} total characters`)
 
       return combinedText
     } catch (error) {

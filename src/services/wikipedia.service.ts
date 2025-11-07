@@ -1,4 +1,4 @@
-import { summarizeWikipediaContent } from './ai.service'
+import { summarizeWikipediaContent, extractMentionedPlaces } from './ai.service'
 
 interface WikipediaSearchResult {
   query: {
@@ -39,7 +39,10 @@ export class WikipediaService {
     }
   }
 
-  private async searchWikipediaArticle(title: string, language: string = 'en'): Promise<string | null> {
+  private async searchWikipediaArticle(
+    title: string,
+    language: string = 'en',
+  ): Promise<{ content: string; articleTitle: string } | null> {
     try {
       const baseUrl = `https://${language}.wikipedia.org/w/api.php`
 
@@ -94,35 +97,54 @@ export class WikipediaService {
         return null
       }
 
-      return page.extract.slice(0, 3000) // Limit content to avoid token limits
+      return {
+        content: page.extract.slice(0, 3000), // Limit content to avoid token limits
+        articleTitle: pageTitle,
+      }
     } catch (error) {
       console.error(`❌ Error searching Wikipedia for ${title}:`, error)
       return null
     }
   }
 
-  public async fetchAndSummarizeWikipedia(placeName: string, wikipediaReference: string): Promise<{ summary: string | null; rawContent: string | null }> {
+  public async fetchAndSummarizeWikipedia(
+    placeName: string,
+    wikipediaReference: string,
+  ): Promise<{
+    summary: string | null
+    rawContent: string | null
+    mentionedPlaces: string[]
+    wikipediaReference: string
+  }> {
     try {
       console.log(`🔍 Processing Wikipedia info for place: ${placeName}`)
 
       const parsed = this.parseWikipediaReference(wikipediaReference)
       if (!parsed) {
         console.warn(`❌ Invalid Wikipedia reference format: ${wikipediaReference}`)
-        return { summary: null, rawContent: null }
+        return { summary: null, rawContent: null, mentionedPlaces: [], wikipediaReference }
       }
 
-      const wikipediaContent = await this.searchWikipediaArticle(parsed.title, parsed.language)
+      const searchResult = await this.searchWikipediaArticle(parsed.title, parsed.language)
 
-      if (!wikipediaContent) {
-        return { summary: null, rawContent: null }
+      if (!searchResult) {
+        return { summary: null, rawContent: null, mentionedPlaces: [], wikipediaReference }
       }
+
+      const wikipediaContent = searchResult.content
 
       // Always store raw content, with more generous limit for AI processing
       const rawContent = wikipediaContent.length > 4000 ? wikipediaContent.substring(0, 4000) + '...' : wikipediaContent
 
-      console.log(`📄 Retrieved ${wikipediaContent.length} characters from Wikipedia, sending to AI for summarization`)
+      console.log(`📄 Retrieved ${wikipediaContent.length} characters from Wikipedia`)
+      console.log(`📝 Summarizing content...`)
+      console.log(`📍 Extracting mentioned places...`)
 
-      const summary = await summarizeWikipediaContent(placeName, wikipediaContent)
+      // Two separate LLM calls in parallel - summarization and place extraction
+      const [summary, mentionedPlaces] = await Promise.all([
+        summarizeWikipediaContent(placeName, wikipediaContent),
+        extractMentionedPlaces(placeName, wikipediaContent),
+      ])
 
       if (summary) {
         console.log(`✅ Generated Wikipedia summary for ${placeName}`)
@@ -130,47 +152,76 @@ export class WikipediaService {
         console.log(`❌ No relevant Wikipedia summary generated for ${placeName}`)
       }
 
-      return { summary, rawContent }
+      if (mentionedPlaces.length > 0) {
+        console.log(`✅ Extracted ${mentionedPlaces.length} mentioned places from Wikipedia`)
+      }
+
+      return { summary, rawContent, mentionedPlaces, wikipediaReference }
     } catch (error) {
       console.error(`❌ Error processing Wikipedia for ${placeName}:`, error)
-      return { summary: null, rawContent: null }
+      return { summary: null, rawContent: null, mentionedPlaces: [], wikipediaReference }
     }
   }
 
-  public async searchWikipediaByPlaceName(placeName: string): Promise<{ summary: string | null; rawContent: string | null }> {
+  public async searchWikipediaByPlaceName(
+    placeName: string,
+    country?: string | null,
+  ): Promise<{
+    summary: string | null
+    rawContent: string | null
+    mentionedPlaces: string[]
+    wikipediaReference: string | null
+  }> {
     try {
       console.log(`🔍 Searching Wikipedia by place name: ${placeName}`)
 
-      // Try both English and French
-      const languages = ['en', 'fr']
+      // Prioritize language based on country
+      // For France, try French first, then English
+      // For other countries, try English first, then French
+      const languages = country === 'France' ? ['fr', 'en'] : ['en', 'fr']
 
       for (const language of languages) {
-        const content = await this.searchWikipediaArticle(placeName, language)
-        if (content) {
-          console.log(`📄 Found Wikipedia content in ${language}, sending to AI for summarization`)
+        const searchResult = await this.searchWikipediaArticle(placeName, language)
+        if (searchResult) {
+          console.log(`📄 Found Wikipedia content in ${language}`)
+          
+          const content = searchResult.content
+          const articleTitle = searchResult.articleTitle
+          const wikipediaReference = `${language}:${articleTitle}`
+          
+          console.log(`📝 Summarizing content...`)
+          console.log(`📍 Extracting mentioned places...`)
 
           // Always store raw content, with more generous limit for AI processing
           const rawContent = content.length > 4000 ? content.substring(0, 4000) + '...' : content
 
-          const summary = await summarizeWikipediaContent(placeName, content)
+          // Two separate LLM calls in parallel - summarization and place extraction
+          const [summary, mentionedPlaces] = await Promise.all([
+            summarizeWikipediaContent(placeName, content),
+            extractMentionedPlaces(placeName, content),
+          ])
 
           if (summary) {
             console.log(`✅ Generated Wikipedia summary for ${placeName}`)
-            return { summary, rawContent }
+            if (mentionedPlaces.length > 0) {
+              console.log(`✅ Extracted ${mentionedPlaces.length} mentioned places from Wikipedia`)
+            }
+            return { summary, rawContent, mentionedPlaces, wikipediaReference }
           }
 
-          // Return raw content even if AI summarization failed
-          return { summary: null, rawContent }
+          // Return raw content and places even if AI summarization failed
+          return { summary: null, rawContent, mentionedPlaces, wikipediaReference }
         }
       }
 
       console.log(`❌ No relevant Wikipedia content found for ${placeName}`)
-      return { summary: null, rawContent: null }
+      return { summary: null, rawContent: null, mentionedPlaces: [], wikipediaReference: null }
     } catch (error) {
       console.error(`❌ Error searching Wikipedia for ${placeName}:`, error)
-      return { summary: null, rawContent: null }
+      return { summary: null, rawContent: null, mentionedPlaces: [], wikipediaReference: null }
     }
   }
+
 }
 
 export const wikipediaService = new WikipediaService()

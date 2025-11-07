@@ -4,7 +4,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
 import { swaggerSpec } from './config/swagger'
-import { analyzePlaceWebsite } from './controllers/place-analysis.controller'
+import { analyzePlaceWebsite, analyzePlaceWikipedia } from './controllers/place-analysis.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -14,9 +14,7 @@ if (!process.env.API_SECRET_KEY) {
   throw new Error('API_SECRET_KEY environment variable is required')
 }
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:3000']
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000']
 
 // Rate limiter configuration
 const limiter = rateLimit({
@@ -27,10 +25,10 @@ const limiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 })
 
-// Stricter rate limiter for resource-intensive endpoints
+// Rate limiter for resource-intensive endpoints (more lenient for manual use)
 const strictLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // Limit each IP to 10 requests per hour for scraping
+  max: 50, // Limit each IP to 50 requests per hour (reasonable for manual use)
   message: 'Too many scraping requests. Please try again in an hour.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -78,7 +76,7 @@ app.use('/api', limiter)
  *       - A detailed description (max 2000 characters)
  *       - A list of mentioned nature places
  *
- *       This is a resource-intensive operation with strict rate limiting (10 requests/hour).
+ *       This is a resource-intensive operation with rate limiting (50 requests/hour).
  *     tags:
  *       - Places
  *     security:
@@ -91,6 +89,13 @@ app.use('/api', limiter)
  *           type: string
  *           format: uuid
  *         description: The UUID of the place to analyze
+ *       - in: query
+ *         name: bypassCache
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: If true, bypasses cached raw data and fetches fresh content (which will overwrite the cache)
  *     responses:
  *       200:
  *         description: Successful analysis
@@ -130,6 +135,77 @@ app.use('/api', limiter)
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/places/:placeId/analyze', authenticateApiKey, strictLimiter, analyzePlaceWebsite)
+
+/**
+ * @swagger
+ * /api/places/{placeId}/analyze-wikipedia:
+ *   post:
+ *     summary: Analyze a place's Wikipedia page and extract information
+ *     description: |
+ *       Fetches a place's Wikipedia article (from metadata or by searching) and uses AI to extract:
+ *       - A detailed description focused on nature/outdoor features
+ *       - A list of mentioned nature places
+ *
+ *       This operation uses two separate LLM calls in parallel for summarization and place extraction.
+ *       Results are automatically saved to the database.
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: placeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The UUID of the place to analyze
+ *       - in: query
+ *         name: bypassCache
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: If true, bypasses cached raw data and fetches fresh content (which will overwrite the cache)
+ *     responses:
+ *       200:
+ *         description: Successful analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WikipediaAnalysisResponse'
+ *       400:
+ *         description: Bad request (invalid ID)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Place not found or no Wikipedia article found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error (AI unavailable, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/:placeId/analyze-wikipedia', authenticateApiKey, strictLimiter, analyzePlaceWikipedia)
 
 /**
  * @swagger

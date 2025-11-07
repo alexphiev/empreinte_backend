@@ -12,9 +12,10 @@
  */
 
 import 'dotenv/config'
-import { getPlaceById } from '../db/places'
-import { analyzeScrapedContent } from '../services/ai.service'
+import { getPlaceById, updatePlace } from '../db/places'
+import { summarizeScrapedContent, extractMentionedPlaces } from '../services/ai.service'
 import { deepWebsiteScraperService } from '../services/deep-website-scraper.service'
+import { cleanText } from '../utils/text-cleaner'
 
 async function main() {
   const placeId = process.argv[2]
@@ -52,54 +53,94 @@ async function main() {
       process.exit(1)
     }
 
-    // Step 2: Scrape website
-    console.log('\n--- Step 2: Scraping Website ---')
-    console.log(`Target: ${place.website}`)
+    // Step 2: Check cache or scrape website
+    console.log('\n--- Step 2: Fetching Website Content ---')
+    let scrapedContent: string | null = null
+    let pagesCount = 0
 
-    const scrapedContent = await deepWebsiteScraperService.scrapeWebsiteDeep(place.website)
+    if (place.website_raw && place.website_raw.trim().length > 0) {
+      console.log(`✅ Using cached website content (${place.website_raw.length} chars)`)
+      scrapedContent = place.website_raw
+      pagesCount = (scrapedContent.match(/=== Page \d+:/g) || []).length
+    } else {
+      console.log(`🔍 No cache found, scraping website...`)
+      console.log(`Target: ${place.website}`)
 
-    if (!scrapedContent) {
-      console.error('❌ Failed to scrape website')
-      console.error(
-        'The website may have protections, be unavailable, or there was a network error.',
+      scrapedContent = await deepWebsiteScraperService.scrapeWebsiteDeep(
+        place.website,
+        place.name || undefined,
+        place.country || undefined,
       )
-      process.exit(1)
+
+      if (!scrapedContent) {
+        console.error('❌ Failed to scrape website')
+        console.error(
+          'The website may have protections, be unavailable, or there was a network error.',
+        )
+        process.exit(1)
+      }
+
+      // Clean and store raw content
+      const cleanedRawContent = cleanText(scrapedContent)
+      pagesCount = (cleanedRawContent.match(/=== Page \d+:/g) || []).length
+
+      // Store cleaned raw content in cache
+      await updatePlace(place.id, { website_raw: cleanedRawContent })
+      console.log(`💾 Cached cleaned website content (${cleanedRawContent.length} chars)`)
+      scrapedContent = cleanedRawContent
     }
 
-    const pagesCount = (scrapedContent.match(/=== Page \d+:/g) || []).length
-    console.log(`✅ Successfully scraped ${pagesCount} pages`)
-    console.log(`   Total content length: ${scrapedContent.length} characters`)
+    console.log(`✅ Content ready: ${pagesCount} pages, ${scrapedContent.length} characters`)
 
-    // Step 3: Analyze with AI
+    // Step 3: Two separate LLM calls - summarization and place extraction (done in parallel)
     console.log('\n--- Step 3: Analyzing with AI ---')
-    console.log(`Using Gemini API to extract description and mentioned places...`)
+    console.log(`📝 Summarizing content...`)
+    console.log(`📍 Extracting mentioned places...`)
 
-    const analysis = await analyzeScrapedContent(place.name || 'Unknown Place', scrapedContent)
+    const [summary, mentionedPlaces] = await Promise.all([
+      summarizeScrapedContent(place.name || 'Unknown Place', scrapedContent),
+      extractMentionedPlaces(place.name || 'Unknown Place', scrapedContent),
+    ])
 
-    if (!analysis) {
-      console.error('❌ AI analysis failed')
+    if (!summary) {
+      console.error('❌ AI summarization failed')
       console.error('The content may not be relevant or the AI service is unavailable.')
       process.exit(1)
     }
 
-    // Step 4: Display results
+    // Step 4: Save results to database
+    console.log('\n--- Step 4: Saving Results to Database ---')
+    const updateResult = await updatePlace(place.id, {
+      website_generated: summary,
+      website_places_generated: mentionedPlaces,
+      website_raw: scrapedContent, // Ensure raw content is stored
+    })
+
+    if (updateResult.error) {
+      console.error(`❌ Failed to save results to database: ${updateResult.error.message}`)
+      console.warn('⚠️  Continuing to display results...')
+    } else {
+      console.log(`✅ Results saved to database`)
+    }
+
+    // Step 5: Display results
     console.log('\n' + '='.repeat(80))
     console.log('✅ ANALYSIS COMPLETE')
     console.log('='.repeat(80))
 
     console.log('\n📝 Description:')
     console.log('-'.repeat(80))
-    console.log(analysis.description)
+    console.log(summary)
     console.log('-'.repeat(80))
-    console.log(`Length: ${analysis.description.length} characters`)
+    console.log(`Length: ${summary.length} characters`)
 
     console.log('\n📍 Mentioned Places:')
     console.log('-'.repeat(80))
-    if (analysis.mentionedPlaces.length === 0) {
+    if (mentionedPlaces.length === 0) {
       console.log('(No other places mentioned)')
     } else {
-      analysis.mentionedPlaces.forEach((place, index) => {
-        console.log(`${index + 1}. ${place}`)
+      mentionedPlaces.forEach((placeName, index) => {
+        console.log(`${index + 1}. ${placeName}`)
       })
     }
     console.log('-'.repeat(80))
@@ -107,8 +148,8 @@ async function main() {
     console.log('\n✨ Summary:')
     console.log(`   - Pages scraped: ${pagesCount}`)
     console.log(`   - Content analyzed: ${scrapedContent.length} chars`)
-    console.log(`   - Description length: ${analysis.description.length} chars`)
-    console.log(`   - Mentioned places: ${analysis.mentionedPlaces.length}`)
+    console.log(`   - Description length: ${summary.length} chars`)
+    console.log(`   - Mentioned places: ${mentionedPlaces.length}`)
 
     console.log('\n✅ Script completed successfully!')
   } catch (error) {

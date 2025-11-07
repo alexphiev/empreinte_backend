@@ -75,6 +75,37 @@ const options: swaggerJsdoc.Options = {
             'scrapedPagesCount',
           ],
         },
+        WikipediaAnalysisResponse: {
+          type: 'object',
+          properties: {
+            placeId: {
+              type: 'string',
+              format: 'uuid',
+              description: 'Unique identifier of the place',
+            },
+            placeName: {
+              type: 'string',
+              description: 'Name of the place',
+            },
+            wikipediaReference: {
+              type: 'string',
+              nullable: true,
+              description: 'Wikipedia reference used (e.g., "en:Article Name" or "fr:Article Name")',
+            },
+            description: {
+              type: 'string',
+              description: 'AI-generated detailed description focused on nature features',
+            },
+            mentionedPlaces: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: 'List of other nature places mentioned in the Wikipedia article',
+            },
+          },
+          required: ['placeId', 'placeName', 'description', 'mentionedPlaces'],
+        },
         Error: {
           type: 'object',
           properties: {
