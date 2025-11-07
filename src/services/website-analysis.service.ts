@@ -1,4 +1,6 @@
 import { getPlaceById, updatePlace, type Place } from '../db/places'
+import { getOrCreateSource } from '../db/sources'
+import { batchGetOrCreateGeneratedPlaces } from '../db/generated-places'
 import { summarizeScrapedContent, extractMentionedPlaces } from './ai.service'
 import { deepWebsiteScraperService } from './deep-website-scraper.service'
 import { cleanText } from '../utils/text-cleaner'
@@ -159,6 +161,34 @@ export async function analyzePlaceWebsiteCore(
     } else {
       console.log(`✅ Results saved to database successfully`)
       console.log(`   Updated place ID: ${place.id}`)
+    }
+
+    // Step 4: Store source and generated places
+    if (mentionedPlaces.length > 0 && place.website) {
+      console.log(`\n--- Step 4: Storing Source and Generated Places ---`)
+      try {
+        // Get or create source for the website URL
+        const sourceResponse = await getOrCreateSource(place.website)
+        if (sourceResponse.error || !sourceResponse.data) {
+          console.error(`❌ Failed to get or create source:`, sourceResponse.error)
+        } else {
+          const source = sourceResponse.data
+          console.log(`✅ Source ID: ${source.id}`)
+
+          // Store generated places linked to this source
+          const placesToStore = mentionedPlaces.map((placeName) => ({
+            name: placeName,
+            description: null, // We don't have descriptions for mentioned places from website analysis
+            source_id: source.id,
+          }))
+
+          const storedPlaces = await batchGetOrCreateGeneratedPlaces(placesToStore)
+          console.log(`✅ Stored ${storedPlaces.length} generated places linked to source`)
+        }
+      } catch (error) {
+        console.error(`❌ Error storing source and generated places:`, error)
+        // Don't fail the whole operation if this step fails
+      }
     }
 
     return {

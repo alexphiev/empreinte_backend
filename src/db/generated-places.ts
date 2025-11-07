@@ -1,0 +1,107 @@
+import { PostgrestSingleResponse } from '@supabase/supabase-js'
+import { randomUUID } from 'crypto'
+import { supabase } from '../services/supabase.service'
+import { Tables } from '../types/database'
+
+export type GeneratedPlace = Tables<'generated_places'>
+
+export interface GeneratedPlaceInput {
+  name: string
+  description: string | null
+  source_id: string
+}
+
+/**
+ * Get or create a generated place by source_id and name (ensures uniqueness by source_id + name combination)
+ * If a place with the same source_id and name exists, update its description
+ * @param place The place data to create or update
+ * @returns The generated place object
+ */
+export async function getOrCreateGeneratedPlace(
+  place: GeneratedPlaceInput,
+): Promise<PostgrestSingleResponse<GeneratedPlace>> {
+  // First, try to find existing place by source_id AND name combination
+  const { data: existing, error: findError } = await supabase
+    .from('generated_places')
+    .select('*')
+    .eq('source_id', place.source_id)
+    .eq('name', place.name)
+    .single()
+
+  if (existing && !findError) {
+    // Update existing place with new description
+    console.log(`🔄 Updating existing generated place: ${place.name} (source: ${place.source_id})`)
+    const { data, error } = await supabase
+      .from('generated_places')
+      .update({
+        description: place.description,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('source_id', place.source_id)
+      .eq('name', place.name)
+      .select()
+      .single()
+
+    if (error) {
+      console.error(`❌ Error updating generated place:`, error)
+      return { data: null, error } as PostgrestSingleResponse<GeneratedPlace>
+    }
+
+    return { data, error: null } as PostgrestSingleResponse<GeneratedPlace>
+  }
+
+  // If not found, create a new generated place
+  // Generate UUID explicitly since database may not have default
+  console.log(`📝 Creating new generated place: ${place.name}`)
+  const { data, error } = await supabase
+    .from('generated_places')
+    .insert({
+      id: randomUUID(),
+      name: place.name,
+      description: place.description,
+      source_id: place.source_id,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error(`❌ Error creating generated place:`, error)
+    return { data: null, error } as PostgrestSingleResponse<GeneratedPlace>
+  }
+
+  return { data, error: null } as PostgrestSingleResponse<GeneratedPlace>
+}
+
+/**
+ * Batch create or update generated places
+ * @param places Array of places to create or update
+ * @returns Array of created/updated places
+ */
+export async function batchGetOrCreateGeneratedPlaces(places: GeneratedPlaceInput[]): Promise<GeneratedPlace[]> {
+  const results: GeneratedPlace[] = []
+
+  for (const place of places) {
+    const result = await getOrCreateGeneratedPlace(place)
+    if (result.data) {
+      results.push(result.data)
+    } else if (result.error) {
+      console.error(`❌ Failed to create/update place "${place.name}":`, result.error)
+    }
+  }
+
+  return results
+}
+
+/**
+ * Get all generated places for a source
+ */
+export async function getGeneratedPlacesBySourceId(sourceId: string): Promise<GeneratedPlace[]> {
+  const { data, error } = await supabase.from('generated_places').select('*').eq('source_id', sourceId)
+
+  if (error) {
+    console.error(`❌ Error fetching generated places for source ${sourceId}:`, error)
+    return []
+  }
+
+  return data || []
+}

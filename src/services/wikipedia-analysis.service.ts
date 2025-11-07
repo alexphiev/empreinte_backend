@@ -1,4 +1,6 @@
 import { getPlaceById, updatePlace } from '../db/places'
+import { getOrCreateSource } from '../db/sources'
+import { batchGetOrCreateGeneratedPlaces } from '../db/generated-places'
 import { cleanWikipediaText } from '../utils/text-cleaner'
 import { extractMentionedPlaces, summarizeScrapedContent } from './ai.service'
 import { wikipediaService } from './wikipedia.service'
@@ -216,6 +218,41 @@ export async function analyzePlaceWikipediaCore(
 
     // Use the wikipediaReference from the result if available, otherwise fall back to metadata
     const wikipediaReference = wikipediaResult.wikipediaReference || metadata?.wikipedia || null
+
+    // Step 4: Store source and generated places
+    if (wikipediaResult.mentionedPlaces.length > 0 && wikipediaReference) {
+      console.log(`\n--- Step 4: Storing Source and Generated Places ---`)
+      try {
+        // Construct Wikipedia URL from reference (format: "lang:ArticleTitle")
+        const wikipediaUrl = wikipediaReference.includes(':')
+          ? `https://${wikipediaReference.split(':')[0]}.wikipedia.org/wiki/${encodeURIComponent(wikipediaReference.split(':')[1])}`
+          : null
+
+        if (wikipediaUrl) {
+          // Get or create source for the Wikipedia URL
+          const sourceResponse = await getOrCreateSource(wikipediaUrl)
+          if (sourceResponse.error || !sourceResponse.data) {
+            console.error(`❌ Failed to get or create source:`, sourceResponse.error)
+          } else {
+            const source = sourceResponse.data
+            console.log(`✅ Source ID: ${source.id}`)
+
+            // Store generated places linked to this source
+            const placesToStore = wikipediaResult.mentionedPlaces.map((placeName) => ({
+              name: placeName,
+              description: null, // We don't have descriptions for mentioned places from Wikipedia analysis
+              source_id: source.id,
+            }))
+
+            const storedPlaces = await batchGetOrCreateGeneratedPlaces(placesToStore)
+            console.log(`✅ Stored ${storedPlaces.length} generated places linked to source`)
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error storing source and generated places:`, error)
+        // Don't fail the whole operation if this step fails
+      }
+    }
 
     return {
       result: {

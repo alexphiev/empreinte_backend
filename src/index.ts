@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
 import { swaggerSpec } from './config/swagger'
 import { analyzePlaceWebsite, analyzePlaceWikipedia } from './controllers/place-analysis.controller'
+import { analyzeUrls } from './controllers/url-analysis.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -206,6 +207,105 @@ app.post('/api/places/:placeId/analyze', authenticateApiKey, strictLimiter, anal
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/places/:placeId/analyze-wikipedia', authenticateApiKey, strictLimiter, analyzePlaceWikipedia)
+
+/**
+ * @swagger
+ * /api/urls/analyze:
+ *   post:
+ *     summary: Analyze URLs and extract nature places from them
+ *     description: |
+ *       Scrapes one or more URLs (like travel guides, blog posts, articles) and uses AI to extract:
+ *       - All nature places mentioned in the content
+ *       - Descriptions for each place (when available)
+ *
+ *       Results are automatically stored in the database:
+ *       - Sources are stored in the `sources` table (unique by URL)
+ *       - Generated places are stored in the `generated_places` table (unique by name, linked to source)
+ *
+ *       This is a resource-intensive operation with rate limiting (50 requests/hour).
+ *     tags:
+ *       - URLs
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - urls
+ *             properties:
+ *               urls:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uri
+ *                 description: Array of URLs to analyze
+ *                 example: ["https://example.com/travel-guide"]
+ *     parameters:
+ *       - in: query
+ *         name: bypassCache
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: If true, bypasses cached data and fetches fresh content
+ *     responses:
+ *       200:
+ *         description: Successful analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       sourceId:
+ *                         type: string
+ *                         format: uuid
+ *                       url:
+ *                         type: string
+ *                         format: uri
+ *                       places:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             name:
+ *                               type: string
+ *                             description:
+ *                               type: string
+ *                               nullable: true
+ *       400:
+ *         description: Bad request (invalid URLs or empty array)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error (scraping failed, AI unavailable, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
 
 /**
  * @swagger
