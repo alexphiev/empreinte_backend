@@ -6,6 +6,7 @@ import swaggerUi from 'swagger-ui-express'
 import { swaggerSpec } from './config/swagger'
 import { analyzePlaceWebsite, analyzePlaceWikipedia } from './controllers/place-analysis.controller'
 import { analyzeUrls } from './controllers/url-analysis.controller'
+import { verifyPlaces } from './controllers/place-verification.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -306,6 +307,104 @@ app.post('/api/places/:placeId/analyze-wikipedia', authenticateApiKey, strictLim
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
+
+/**
+ * @swagger
+ * /api/places/verify:
+ *   post:
+ *     summary: Verify generated places and create/update real places in OSM
+ *     description: |
+ *       Searches for generated places in OSM (OpenStreetMap) and either:
+ *       - Creates new places in the database if not found
+ *       - Updates existing places by bumping their score
+ *
+ *       By default, verifies all generated places without a status, sorted by oldest created_at first.
+ *       Can optionally verify a single generated place by ID, or limit the number of places to verify.
+ *       Places are matched by name similarity, and scores are increased based on the source.
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               generatedPlaceId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Optional. Single generated place ID to verify. If not provided, verifies all places without status.
+ *               scoreBump:
+ *                 type: number
+ *                 default: 2
+ *                 description: Score increase for verified places (default 2)
+ *               limit:
+ *                 type: number
+ *                 minimum: 1
+ *                 description: Maximum number of places to verify (only applies when verifying all places, sorted by oldest created_at)
+ *           example:
+ *             scoreBump: 2
+ *             limit: 10
+ *     responses:
+ *       200:
+ *         description: Successful verification
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       generatedPlaceId:
+ *                         type: string
+ *                         format: uuid
+ *                       generatedPlaceName:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                         enum: [ADDED, NO_MATCH, NO_NATURE_MATCH, MULTIPLE_MATCHES]
+ *                         description: Verification status
+ *                       placeId:
+ *                         type: string
+ *                         format: uuid
+ *                         nullable: true
+ *                       osmId:
+ *                         type: number
+ *                         nullable: true
+ *                       error:
+ *                         type: string
+ *                         nullable: true
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error (OSM search failed, database error, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/verify', authenticateApiKey, strictLimiter, verifyPlaces)
 
 /**
  * @swagger

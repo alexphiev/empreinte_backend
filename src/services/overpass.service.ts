@@ -8,6 +8,7 @@ import {
   simplifyCoordinates,
   type Point,
 } from '../utils/geometry'
+import { nominatimService } from './nominatim.service'
 
 export interface OverpassElement {
   type: 'node' | 'way' | 'relation'
@@ -273,6 +274,7 @@ out center geom;`
             'User-Agent': 'empreinte-backend/1.0.0',
           },
           body: `data=${encodeURIComponent(query)}`,
+          signal: AbortSignal.timeout(90000), // 90 second timeout
         })
 
         if (response.status === 429) {
@@ -302,7 +304,12 @@ out center geom;`
 
         return data.elements
       } catch (error) {
-        console.error(`Attempt ${attempt} failed:`, error)
+        // Handle timeout errors specifically
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          console.error(`⏰ Request timeout after 90 seconds (attempt ${attempt}/${retries})`)
+        } else {
+          console.error(`Attempt ${attempt} failed:`, error)
+        }
 
         if (attempt === retries) {
           throw new Error(`All ${retries} attempts failed. Last error: ${error}`)
@@ -338,6 +345,7 @@ out center geom;`
         console.log(`URL: ${currentUrl}`)
         console.log(`Request count: ${++this.requestCount}`)
 
+        // Add timeout: Overpass queries have timeout:60 in the query, so allow 90s for HTTP request
         const response = await fetch(currentUrl, {
           method: 'POST',
           headers: {
@@ -345,6 +353,7 @@ out center geom;`
             'User-Agent': 'empreinte-backend/1.0.0',
           },
           body: `data=${encodeURIComponent(query)}`,
+          signal: AbortSignal.timeout(90000), // 90 second timeout
         })
 
         if (response.status === 429) {
@@ -375,7 +384,12 @@ out center geom;`
 
         return data.elements
       } catch (error) {
-        console.error(`Attempt ${attempt} failed:`, error)
+        // Handle timeout errors specifically
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          console.error(`⏰ Request timeout after 90 seconds (attempt ${attempt}/${retries})`)
+        } else {
+          console.error(`Attempt ${attempt} failed:`, error)
+        }
 
         if (attempt === retries) {
           throw new Error(`All ${retries} attempts failed. Last error: ${error}`)
@@ -762,6 +776,7 @@ out center geom;`
         'User-Agent': 'empreinte-backend/1.0.0',
       },
       body: `data=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(90000), // 90 second timeout
     })
 
     if (!response.ok) {
@@ -791,7 +806,62 @@ out center geom;`
   way(id:${idList});
   node(id:${idList});
 );
-out geom;`
+out center geom;`
+  }
+
+  /**
+   * Fetch full OSM elements by their IDs and types
+   * This is much faster than searching by name since we know the exact IDs
+   */
+  private async fetchElementsByIds(
+    elements: Array<{ type: 'node' | 'way' | 'relation'; id: number }>,
+  ): Promise<OverpassElement[]> {
+    if (elements.length === 0) {
+      return []
+    }
+
+    // Group by type for more efficient queries
+    const nodes: number[] = []
+    const ways: number[] = []
+    const relations: number[] = []
+
+    elements.forEach((el) => {
+      if (el.type === 'node') {
+        nodes.push(el.id)
+      } else if (el.type === 'way') {
+        ways.push(el.id)
+      } else if (el.type === 'relation') {
+        relations.push(el.id)
+      }
+    })
+
+    const queries: string[] = []
+    if (nodes.length > 0) {
+      queries.push(`  node(id:${nodes.join(',')});`)
+    }
+    if (ways.length > 0) {
+      queries.push(`  way(id:${ways.join(',')});`)
+    }
+    if (relations.length > 0) {
+      queries.push(`  relation(id:${relations.join(',')});`)
+    }
+
+    if (queries.length === 0) {
+      return []
+    }
+
+    const query = `[out:json][timeout:30];
+(
+${queries.join('\n')}
+);
+out center geom;`
+
+    try {
+      return await this.executeQuery(query, undefined, 2)
+    } catch (error) {
+      console.warn(`⚠️  Failed to fetch full OSM details:`, error)
+      return []
+    }
   }
 
   /**
@@ -817,6 +887,76 @@ out center geom;`
   public async queryNationalParks(bbox: BoundingBox, retries = 3): Promise<OverpassElement[]> {
     const query = this.buildNationalParksQuery(bbox)
     return this.executeQuery(query, undefined, retries)
+  }
+
+  /**
+   * Search for a place by name using Nominatim (much faster than Overpass for name searches)
+   * Fetches full OSM details from Overpass after getting matches from Nominatim
+   * Returns elements and a flag indicating if Nominatim found results but none were nature places
+   */
+  public async searchPlaceByName(
+    placeName: string,
+    bbox?: BoundingBox,
+  ): Promise<{ elements: OverpassElement[]; noNatureMatch: boolean }> {
+    console.log(`🔍 Searching OSM for: "${placeName}"`)
+
+    // Try Nominatim first (much faster for name searches)
+    try {
+      const nominatimResult = await nominatimService.searchPlaceByName(placeName, bbox)
+
+      // Check if Nominatim found results but none were nature places
+      if (nominatimResult.hasAnyResults && nominatimResult.naturePlaces.length === 0) {
+        console.log(`⚠️  Nominatim found results but none are nature places`)
+        return { elements: [], noNatureMatch: true }
+      }
+
+      if (nominatimResult.naturePlaces.length > 0) {
+        console.log(`✅ Found ${nominatimResult.naturePlaces.length} nature place(s) via Nominatim`)
+
+        // Fetch full OSM details from Overpass using the OSM IDs
+        // This gives us complete geometry, all tags, and proper center points
+        const osmIds = nominatimResult.naturePlaces.map((r) => ({ type: r.type, id: r.id }))
+        const fullElements = await this.fetchElementsByIds(osmIds)
+
+        // Map Nominatim results to full Overpass elements by matching IDs
+        const idMap = new Map<string, OverpassElement>()
+        fullElements.forEach((el) => {
+          idMap.set(`${el.type}/${el.id}`, el)
+        })
+
+        // Return full elements, or fallback to basic info if Overpass fetch failed
+        const elements = nominatimResult.naturePlaces
+          .map((result) => {
+            const key = `${result.type}/${result.id}`
+            const fullElement = idMap.get(key)
+
+            if (fullElement) {
+              // Use full element from Overpass (has complete geometry and tags)
+              return fullElement
+            } else {
+              // Fallback: create basic element from Nominatim data
+              // This shouldn't happen often, but provides a fallback
+              console.warn(`⚠️  Could not fetch full OSM details for ${result.type}/${result.id}`)
+              return {
+                type: result.type,
+                id: result.id,
+                tags: {
+                  name: result.name,
+                },
+              } as OverpassElement
+            }
+          })
+          .filter((el) => el !== undefined) as OverpassElement[]
+
+        return { elements, noNatureMatch: false }
+      } else {
+        console.log(`❌ No results found via Nominatim`)
+      }
+    } catch (error) {
+      console.warn(`⚠️  Nominatim search failed:`, error)
+    }
+
+    return { elements: [], noNatureMatch: false }
   }
 }
 

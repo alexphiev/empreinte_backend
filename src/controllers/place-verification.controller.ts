@@ -1,0 +1,58 @@
+import { Request, Response } from 'express'
+import { verifyPlacesCore, VerificationResult, VerificationStatus } from '../services/place-verification.service'
+
+export interface PlaceVerificationResponse {
+  results: VerificationResult[]
+  error?: string
+}
+
+/**
+ * Verifies generated places by searching OSM and creating/updating real places
+ */
+export async function verifyPlaces(
+  req: Request,
+  res: Response<PlaceVerificationResponse | { error: string }>,
+): Promise<void> {
+  try {
+    const { generatedPlaceId, scoreBump, limit } = req.body
+
+    console.log(`\n🔍 Starting place verification`)
+    if (generatedPlaceId) {
+      console.log(`   Generated Place ID: ${generatedPlaceId}`)
+    } else {
+      console.log(`   Verifying all generated places without status (sorted by oldest created_at)`)
+    }
+    if (scoreBump) {
+      console.log(`   Score bump: ${scoreBump}`)
+    }
+    if (limit) {
+      console.log(`   Limit: ${limit}`)
+    }
+
+    const { results, error } = await verifyPlacesCore({
+      generatedPlaceId,
+      scoreBump: scoreBump || 2,
+      limit: limit ? parseInt(String(limit), 10) : undefined,
+    })
+
+    if (error) {
+      res.status(500).json({ error })
+      return
+    }
+
+    const verifiedCount = results.filter((r) => r.status === VerificationStatus.ADDED).length
+    console.log(`\n✅ Verification complete!`)
+    console.log(`📊 Verified ${verifiedCount}/${results.length} places`)
+
+    const response: PlaceVerificationResponse = {
+      results,
+    }
+
+    res.status(200).json(response)
+  } catch (error) {
+    console.error('❌ Error in verifyPlaces:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ error: `Internal server error: ${errorMessage}` })
+  }
+}
+

@@ -569,15 +569,35 @@ export async function extractPlacesFromUrlContent(urlContent: string): Promise<E
 
 URL content: ${urlContent.substring(0, 30000)}
 
-Please analyze this content and extract ALL nature places, parks, trails, natural landmarks, or outdoor destinations that are mentioned. For each place, extract:
+Please analyze this content and extract SPECIFIC, NAMED nature places, parks, trails, natural landmarks, or outdoor destinations that are mentioned. For each place, extract:
 - The exact name of the place
 - A description (if available) - this could be information about the place, what makes it special, activities available, location details, etc.
 
-These should be:
-- Specifically named places (not generic references like "nearby parks" or "local trails")
-- Related to nature, outdoors, hiking, wildlife, camping, or similar activities
-- Distinct places that could have their own database entry
-- Include ALL places mentioned, even if briefly
+**CRITICAL FILTERING RULES - ONLY EXTRACT SPECIFIC PLACES:**
+- ✅ DO extract: Specific named places like "Parc National des Cévennes", "Mont Blanc", "Sentier des Gorges du Verdon", "Lac d'Annecy", "Forêt de Fontainebleau"
+- ❌ DO NOT extract: Generic terms like "forest", "mountain", "lake", "trail", "park" (without a specific name)
+- ❌ DO NOT extract: Administrative regions like "Auvergne", "Provence", "Bourgogne", "Normandie" (unless they refer to a specific natural area like "Parc Naturel Régional d'Auvergne")
+- ❌ DO NOT extract: Generic descriptors like "the mountains", "the coast", "the countryside", "nearby trails"
+- ❌ DO NOT extract: Types of places without names like "a beautiful forest", "several lakes", "many trails"
+- ✅ DO extract: Places that have a proper name that could be found on a map or in OSM (OpenStreetMap)
+- ✅ DO extract: Named trails, peaks, valleys, lakes, forests, parks, reserves, natural monuments
+- ❌ DO NOT extract: Vague references like "the region", "the area", "the surroundings"
+
+**Examples of what to EXTRACT:**
+- "Parc National de la Vanoise" ✅
+- "Mont Ventoux" ✅
+- "Gorges du Tarn" ✅
+- "Lac de Serre-Ponçon" ✅
+- "Sentier du GR20" ✅
+- "Forêt de Rambouillet" ✅
+
+**Examples of what to NOT EXTRACT:**
+- "forest" ❌
+- "Auvergne" (as a region) ❌
+- "the mountains" ❌
+- "several lakes" ❌
+- "nearby trails" ❌
+- "beautiful nature" ❌
 
 Return ONLY a JSON array of objects. Format:
 [
@@ -598,12 +618,13 @@ If a place has no description available, use null:
 }
 
 IMPORTANT:
-- Only include nature/outdoor places
+- Only include SPECIFIC, NAMED nature/outdoor places that could be found on a map
 - Use the exact names as mentioned in the content
 - Remove duplicates (if same place mentioned multiple times, combine information)
 - Extract as much information as possible for descriptions (aim for 200-500 characters per description when available)
+- Be strict: if a place name is too generic or vague, exclude it
 - Return ONLY valid JSON array, no additional text
-- If no relevant places are found, return an empty array: []
+- If no specific places are found, return an empty array: []
 
 Response:`
 
