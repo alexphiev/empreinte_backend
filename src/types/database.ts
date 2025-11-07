@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      generated_places: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string | null
+          place_id: string | null
+          source_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string | null
+          place_id?: string | null
+          source_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string | null
+          place_id?: string | null
+          source_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_places_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_places_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       places: {
         Row: {
           country: string | null
@@ -224,6 +269,33 @@ export type Database = {
           total_results_loaded?: number | null
           updated_at?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      sources: {
+        Row: {
+          created_at: string
+          id: string
+          name: string | null
+          raw_content: string | null
+          updated_at: string | null
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          name?: string | null
+          raw_content?: string | null
+          updated_at?: string | null
+          url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          raw_content?: string | null
+          updated_at?: string | null
+          url?: string
         }
         Relationships: []
       }

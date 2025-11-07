@@ -550,6 +550,119 @@ Response (comprehensive summary only, no JSON, aim for 1500-2000 characters):`
 }
 
 /**
+ * Extracts nature places with descriptions from URL content (for source analysis)
+ * @param urlContent The scraped content from a URL
+ * @returns Array of objects with name and description for each place found
+ */
+export interface ExtractedPlace {
+  name: string
+  description: string | null
+}
+
+export async function extractPlacesFromUrlContent(urlContent: string): Promise<ExtractedPlace[]> {
+  const genAI = getGenAI()
+  if (!genAI) {
+    throw new Error('AI service is not available')
+  }
+
+  const prompt = `You are helping to analyze nature and outdoor places from a URL (like a travel guide, blog post, or article).
+
+URL content: ${urlContent.substring(0, 30000)}
+
+Please analyze this content and extract ALL nature places, parks, trails, natural landmarks, or outdoor destinations that are mentioned. For each place, extract:
+- The exact name of the place
+- A description (if available) - this could be information about the place, what makes it special, activities available, location details, etc.
+
+These should be:
+- Specifically named places (not generic references like "nearby parks" or "local trails")
+- Related to nature, outdoors, hiking, wildlife, camping, or similar activities
+- Distinct places that could have their own database entry
+- Include ALL places mentioned, even if briefly
+
+Return ONLY a JSON array of objects. Format:
+[
+  {
+    "name": "Place Name 1",
+    "description": "Description of Place 1 with details about features, activities, location, etc."
+  },
+  {
+    "name": "Place Name 2",
+    "description": "Description of Place 2..."
+  }
+]
+
+If a place has no description available, use null:
+{
+  "name": "Place Name",
+  "description": null
+}
+
+IMPORTANT:
+- Only include nature/outdoor places
+- Use the exact names as mentioned in the content
+- Remove duplicates (if same place mentioned multiple times, combine information)
+- Extract as much information as possible for descriptions (aim for 200-500 characters per description when available)
+- Return ONLY valid JSON array, no additional text
+- If no relevant places are found, return an empty array: []
+
+Response:`
+
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }]
+
+  try {
+    const result = await genAI.models.generateContent({
+      model: MODEL.GEMMA,
+      contents: contents,
+    })
+
+    let responseText: string
+    try {
+      responseText = extractResponseText(result).trim()
+    } catch (extractError) {
+      console.warn('First attempt failed, retrying without grounding tools...', extractError)
+      const fallbackResult = await genAI.models.generateContent({
+        model: MODEL.GEMMA,
+        contents: contents,
+      })
+      responseText = extractResponseText(fallbackResult).trim()
+    }
+
+    if (!responseText) {
+      console.log('❌ AI returned empty response')
+      return []
+    }
+
+    // Try to extract JSON array from response
+    let jsonText = responseText
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[0]
+    }
+
+    const parsed = JSON.parse(jsonText) as ExtractedPlace[]
+
+    if (!Array.isArray(parsed)) {
+      console.warn('❌ AI returned invalid format, returning empty array')
+      return []
+    }
+
+    // Filter and normalize
+    const places = parsed
+      .filter((place) => place && typeof place.name === 'string' && place.name.trim().length > 0)
+      .map((place) => ({
+        name: place.name.trim(),
+        description: place.description && typeof place.description === 'string' ? place.description.trim() : null,
+      }))
+
+    console.log(`✅ Extracted ${places.length} places from URL content`)
+    return places
+  } catch (error) {
+    console.error('Error extracting places from URL content:', error)
+    return []
+  }
+}
+
+/**
  * Extracts mentioned nature places from scraped website content
  * @param placeName The name of the place being analyzed
  * @param scrapedContent The combined text content from scraped website pages
