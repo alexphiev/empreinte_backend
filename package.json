@@ -26,6 +26,7 @@
     "analyze-place-website": "ts-node src/scripts/analyze-place-website.ts",
     "analyze-place-wikipedia": "ts-node src/scripts/analyze-place-wikipedia.ts",
     "analyze-urls": "ts-node src/scripts/analyze-urls.ts",
+    "verify-places": "ts-node src/scripts/verify-places.ts",
     "clear-osm-cache": "./clear-osm-cache.sh",
     "clear-overture-cache": "./clear-overture-cache.sh",
     "generate-types": "supabase gen types typescript --project-id ydtttobvqajzglvdcqas > src/types/database.ts"

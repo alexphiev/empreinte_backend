@@ -818,6 +818,40 @@ out center geom;`
     const query = this.buildNationalParksQuery(bbox)
     return this.executeQuery(query, undefined, retries)
   }
+
+  /**
+   * Search for a place by name in OSM
+   * Uses a bounding box around France (can be extended for other regions)
+   */
+  public async searchPlaceByName(placeName: string, bbox?: BoundingBox): Promise<OverpassElement[]> {
+    // Default to France bounding box if not provided
+    const searchBbox = bbox || {
+      south: 41.0,
+      west: -5.0,
+      north: 51.5,
+      east: 10.0,
+    }
+
+    // Build query to search for places by name matching the supported tags
+    const queries: string[] = []
+    const escapedName = placeName.replace(/"/g, '\\"')
+
+    for (const [tagKey, tagValues] of Object.entries(OSM_SUPPORTED_TAGS)) {
+      const valuePattern = `^(${tagValues.join('|')})$`
+      queries.push(`  node[${tagKey}~"${valuePattern}"]["name"~"${escapedName}",i];`)
+      queries.push(`  way[${tagKey}~"${valuePattern}"]["name"~"${escapedName}",i];`)
+      queries.push(`  relation[${tagKey}~"${valuePattern}"]["name"~"${escapedName}",i];`)
+    }
+
+    const query = `[out:json][timeout:60][bbox:${searchBbox.south},${searchBbox.west},${searchBbox.north},${searchBbox.east}];
+(
+${queries.join('\n')}
+);
+out center geom;`
+
+    console.log(`🔍 Searching OSM for: "${placeName}"`)
+    return this.executeQuery(query, `search_${placeName.replace(/[^a-zA-Z0-9]/g, '_')}`, 2)
+  }
 }
 
 export const overpassService = new OverpassService()

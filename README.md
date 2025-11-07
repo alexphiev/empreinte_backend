@@ -193,6 +193,67 @@ pnpm analyze-place-wikipedia 123e4567-e89b-12d3-a456-426614174000
 
 **Note**: Works best if the place has a Wikipedia reference in metadata (format: `"en:Article Name"` or `"fr:Article Name"`), but will also search by place name if not found.
 
+### Analyze URLs
+
+Analyze one or more URLs (travel guides, blog posts, articles) to extract nature places:
+
+```bash
+pnpm analyze-urls <url1> [url2] [url3] ...
+```
+
+**What it does**:
+
+1. Scrapes each URL and extracts text content
+2. Uses AI to extract specific, named nature places (filters out generic terms)
+3. Stores sources in the `sources` table (unique by URL)
+4. Stores extracted places in the `generated_places` table (unique by source_id + name)
+5. Caches raw content for future use (can bypass with `bypassCache` option in API)
+
+**Example**:
+
+```bash
+pnpm analyze-urls "https://example.com/travel-guide"
+pnpm analyze-urls "https://example.com/guide1" "https://example.com/guide2"
+```
+
+**Note**: The AI is configured to only extract specific, named places that can be found on maps (excludes generic terms like "forest", "mountain", or administrative regions like "Auvergne").
+
+### Verify Generated Places
+
+Verify generated places by searching OSM and creating/updating real places with bumped scores:
+
+```bash
+pnpm verify-places <sourceId> [scoreBump]
+pnpm verify-places <generatedPlaceId> [scoreBump]
+```
+
+**What it does**:
+
+1. Fetches generated places (either all from a source, or a single place)
+2. Searches OSM (OpenStreetMap) for each place by name
+3. Matches places using name similarity scoring
+4. Creates new places in the database if not found (with bumped score)
+5. Updates existing places by increasing their `source_score` (default +2 points)
+
+**Examples**:
+
+```bash
+# Verify all places from a source
+pnpm verify-places 123e4567-e89b-12d3-a456-426614174000
+
+# Verify all places with custom score bump
+pnpm verify-places 123e4567-e89b-12d3-a456-426614174000 3
+
+# Verify a single generated place
+pnpm verify-places abc123-def456-789
+```
+
+**Parameters**:
+
+- `sourceId`: UUID of the source to verify all generated places from
+- `generatedPlaceId`: UUID of a single generated place to verify
+- `scoreBump`: Score increase for verified places (default: 2)
+
 ## Data Enhancement System
 
 The application includes a comprehensive system for enhancing place data with information from multiple sources:
@@ -296,6 +357,8 @@ The API provides endpoints for analyzing places. Full interactive documentation 
 
 - **POST `/api/places/{placeId}/analyze`**: Analyze a place's website
 - **POST `/api/places/{placeId}/analyze-wikipedia`**: Analyze a place's Wikipedia page
+- **POST `/api/urls/analyze`**: Analyze URLs and extract nature places
+- **POST `/api/places/verify`**: Verify generated places and create/update real places in OSM
 - **POST `/test`**: Test endpoint to verify API key authentication
 
 **Rate Limits**:
@@ -345,6 +408,8 @@ REDDIT_CLIENT_SECRET=your_reddit_client_secret
 | `enhance-places`              | Enhance place data with AI      | `pnpm enhance-places [list\|all\|<id>] [force]`          |
 | `analyze-place-website`       | Analyze a place's website       | `pnpm analyze-place-website <place-id>`                  |
 | `analyze-place-wikipedia`     | Analyze a place's Wikipedia     | `pnpm analyze-place-wikipedia <place-id>`                |
+| `analyze-urls`                | Analyze URLs and extract places | `pnpm analyze-urls <url1> [url2] ...`                    |
+| `verify-places`               | Verify generated places in OSM  | `pnpm verify-places <sourceId> [scoreBump]`              |
 | `recalculate-scores`          | Recalculate place scores        | `pnpm recalculate-scores`                                |
 | `migrate-place-types`         | Migrate place types             | `pnpm migrate-place-types`                               |
 | `generate-types`              | Generate DB types               | `pnpm generate-types`                                    |
