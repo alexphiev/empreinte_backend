@@ -18,12 +18,12 @@ export function cleanText(text: string): string {
   return text
     .replace(/\r\n/g, '\n') // Normalize line endings
     .replace(/\r/g, '\n') // Normalize line endings
-    .replace(/\n{3,}/g, '\n\n') // Max 2 consecutive newlines
     .replace(/\[.*?\]/g, '') // Remove [citations]
     .replace(/\{.*?\}/g, '') // Remove {annotations}
-    .replace(/\s+/g, ' ') // Normalize whitespace (but preserve single newlines)
+    .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs (preserve newlines)
     .replace(/ \n/g, '\n') // Remove spaces before newlines
     .replace(/\n /g, '\n') // Remove spaces after newlines
+    .replace(/\n{3,}/g, '\n\n') // Max 2 consecutive newlines (after whitespace normalization)
     .trim()
 }
 
