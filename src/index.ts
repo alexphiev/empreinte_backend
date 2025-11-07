@@ -343,12 +343,17 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *                 type: number
  *                 default: 2
  *                 description: Score increase for verified places (default 2)
+ *               limit:
+ *                 type: number
+ *                 minimum: 1
+ *                 description: Maximum number of places to verify (only applies when using sourceId)
  *             oneOf:
  *               - required: [sourceId]
  *               - required: [generatedPlaceId]
  *           example:
  *             sourceId: "123e4567-e89b-12d3-a456-426614174000"
  *             scoreBump: 2
+ *             limit: 10
  *     responses:
  *       200:
  *         description: Successful verification
@@ -367,8 +372,10 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *                         format: uuid
  *                       generatedPlaceName:
  *                         type: string
- *                       verified:
- *                         type: boolean
+ *                       status:
+ *                         type: string
+ *                         enum: [ADDED, NO_MATCH, MULTIPLE_MATCHES]
+ *                         description: Verification status
  *                       placeId:
  *                         type: string
  *                         format: uuid

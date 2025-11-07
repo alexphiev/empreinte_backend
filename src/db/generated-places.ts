@@ -105,3 +105,18 @@ export async function getGeneratedPlacesBySourceId(sourceId: string): Promise<Ge
 
   return data || []
 }
+
+/**
+ * Update a generated place
+ */
+export async function updateGeneratedPlace(
+  id: string,
+  updates: Partial<GeneratedPlace>,
+): Promise<PostgrestSingleResponse<GeneratedPlace>> {
+  return supabase
+    .from('generated_places')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+}

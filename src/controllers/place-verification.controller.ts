@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { verifyPlacesCore, VerificationResult } from '../services/place-verification.service'
+import { verifyPlacesCore, VerificationResult, VerificationStatus } from '../services/place-verification.service'
 
 export interface PlaceVerificationResponse {
   results: VerificationResult[]
@@ -14,7 +14,7 @@ export async function verifyPlaces(
   res: Response<PlaceVerificationResponse | { error: string }>,
 ): Promise<void> {
   try {
-    const { sourceId, generatedPlaceId, scoreBump } = req.body
+    const { sourceId, generatedPlaceId, scoreBump, limit } = req.body
 
     if (!sourceId && !generatedPlaceId) {
       res.status(400).json({ error: 'Either sourceId or generatedPlaceId must be provided' })
@@ -31,11 +31,15 @@ export async function verifyPlaces(
     if (scoreBump) {
       console.log(`   Score bump: ${scoreBump}`)
     }
+    if (limit) {
+      console.log(`   Limit: ${limit}`)
+    }
 
     const { results, error } = await verifyPlacesCore({
       sourceId,
       generatedPlaceId,
       scoreBump: scoreBump || 2,
+      limit: limit ? parseInt(String(limit), 10) : undefined,
     })
 
     if (error) {
@@ -43,7 +47,7 @@ export async function verifyPlaces(
       return
     }
 
-    const verifiedCount = results.filter((r) => r.verified).length
+    const verifiedCount = results.filter((r) => r.status === VerificationStatus.ADDED).length
     console.log(`\n✅ Verification complete!`)
     console.log(`📊 Verified ${verifiedCount}/${results.length} places`)
 
