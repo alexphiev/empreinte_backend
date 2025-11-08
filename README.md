@@ -254,6 +254,44 @@ pnpm verify-places abc123-def456-789
 - `generatedPlaceId`: UUID of a single generated place to verify
 - `scoreBump`: Score increase for verified places (default: 2)
 
+### Fetch Photos for Places
+
+Fetch photos for places that don't have any yet. Tries Wikimedia Commons first (free), then falls back to Google Places API:
+
+```bash
+pnpm fetch-photos [--minScore=<number>] [--limit=<number>]
+```
+
+**What it does**:
+
+1. Finds places without photos (`photos_fetched_at` is null)
+2. Optionally filters by minimum score
+3. Tries Wikimedia Commons API first (free, uses place name + coordinates + OSM ID)
+4. Falls back to Google Places API if no Wikimedia photos found
+5. Saves up to 5 photos per place, marks first as primary
+6. Sets `photos_fetched_at` timestamp to prevent refetching
+
+**Examples**:
+
+```bash
+# Fetch photos for all places without photos
+pnpm fetch-photos
+
+# Fetch photos only for places with score >= 5
+pnpm fetch-photos --minScore 5
+
+# Fetch photos for first 50 places with score >= 5
+pnpm fetch-photos --minScore 5 --limit 50
+
+# Fetch photos for first 10 places (any score)
+pnpm fetch-photos --limit 10
+```
+
+**Parameters**:
+
+- `--minScore`: Optional. Only fetch photos for places with score >= minScore
+- `--limit`: Optional. Maximum number of places to process
+
 ## Data Enhancement System
 
 The application includes a comprehensive system for enhancing place data with information from multiple sources:
@@ -359,6 +397,7 @@ The API provides endpoints for analyzing places. Full interactive documentation 
 - **POST `/api/places/{placeId}/analyze-wikipedia`**: Analyze a place's Wikipedia page
 - **POST `/api/urls/analyze`**: Analyze URLs and extract nature places
 - **POST `/api/places/verify`**: Verify generated places and create/update real places in OSM
+- **POST `/api/places/fetch-photos`**: Fetch photos for places that don't have any yet
 - **POST `/test`**: Test endpoint to verify API key authentication
 
 **Rate Limits**:
@@ -410,6 +449,7 @@ REDDIT_CLIENT_SECRET=your_reddit_client_secret
 | `analyze-place-wikipedia`     | Analyze a place's Wikipedia     | `pnpm analyze-place-wikipedia <place-id>`                |
 | `analyze-urls`                | Analyze URLs and extract places | `pnpm analyze-urls <url1> [url2] ...`                    |
 | `verify-places`               | Verify generated places in OSM  | `pnpm verify-places <sourceId> [scoreBump]`              |
+| `fetch-photos`                | Fetch photos for places         | `pnpm fetch-photos [--minScore=N] [--limit=N]`           |
 | `recalculate-scores`          | Recalculate place scores        | `pnpm recalculate-scores`                                |
 | `migrate-place-types`         | Migrate place types             | `pnpm migrate-place-types`                               |
 | `generate-types`              | Generate DB types               | `pnpm generate-types`                                    |
