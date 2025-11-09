@@ -158,20 +158,105 @@ export class GooglePlacesPhotosService {
 
   /**
    * Search for photos of a place by name and coordinates
+   * Returns photos and the Google Places ID (if found)
    */
   public async searchPlacePhotos(
     placeName: string,
     latitude: number | null,
     longitude: number | null,
-  ): Promise<GooglePlacesPhoto[]> {
-    const placeId = await this.findPlaceId(placeName, latitude, longitude)
+    existingGooglePlacesId?: string | null,
+  ): Promise<{ photos: GooglePlacesPhoto[]; googlePlacesId: string | null }> {
+    // Use existing Google Places ID if available
+    let placeId: string | null = existingGooglePlacesId || null
+
+    // If no existing ID, search for it
     if (!placeId) {
-      return []
+      placeId = await this.findPlaceId(placeName, latitude, longitude)
+    } else {
+      console.log(`✅ Using existing Google Places ID: ${placeId}`)
     }
 
-    return await this.getPlacePhotos(placeId)
+    if (!placeId) {
+      return { photos: [], googlePlacesId: null }
+    }
+
+    const photos = await this.getPlacePhotos(placeId)
+    return { photos, googlePlacesId: placeId }
+  }
+
+  /**
+   * Get ratings for a place using Google Places API
+   */
+  public async getPlaceRatings(placeId: string): Promise<{ rating: number | null; ratingCount: number | null }> {
+    try {
+      console.log(`⭐ Fetching ratings for Google Place ID: ${placeId}`)
+
+      const baseUrl = `https://places.googleapis.com/v1/places/${placeId}`
+
+      const response = await fetch(baseUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': this.apiKey,
+          'X-Goog-FieldMask': 'rating,userRatingCount',
+        },
+        signal: AbortSignal.timeout(10000),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Google Places API error: ${response.status} - ${errorText}`)
+      }
+
+      const data = (await response.json()) as {
+        rating?: number
+        userRatingCount?: number
+      }
+
+      const rating = data.rating ?? null
+      const ratingCount = data.userRatingCount ?? null
+
+      if (rating !== null) {
+        console.log(`✅ Found rating: ${rating} (${ratingCount || 0} reviews)`)
+      } else {
+        console.log(`❌ No rating found for Google Place ID: ${placeId}`)
+      }
+
+      return { rating, ratingCount }
+    } catch (error) {
+      console.error(`❌ Error fetching Google Places ratings:`, error)
+      return { rating: null, ratingCount: null }
+    }
+  }
+
+  /**
+   * Search for ratings of a place by name and coordinates
+   * Returns ratings and the Google Places ID (if found)
+   */
+  public async searchPlaceRatings(
+    placeName: string,
+    latitude: number | null,
+    longitude: number | null,
+    existingGooglePlacesId?: string | null,
+  ): Promise<{ rating: number | null; ratingCount: number | null; googlePlacesId: string | null }> {
+    // Use existing Google Places ID if available
+    let placeId: string | null = existingGooglePlacesId || null
+
+    // If no existing ID, search for it
+    if (!placeId) {
+      placeId = await this.findPlaceId(placeName, latitude, longitude)
+    } else {
+      console.log(`✅ Using existing Google Places ID: ${placeId}`)
+    }
+
+    if (!placeId) {
+      return { rating: null, ratingCount: null, googlePlacesId: null }
+    }
+
+    const { rating, ratingCount } = await this.getPlaceRatings(placeId)
+    return { rating, ratingCount, googlePlacesId: placeId }
   }
 }
 
 export const googlePlacesPhotosService = new GooglePlacesPhotosService()
-
+export const googlePlacesService = googlePlacesPhotosService
