@@ -62,6 +62,47 @@ export type Database = {
           },
         ]
       }
+      place_photos: {
+        Row: {
+          attribution: string | null
+          created_at: string | null
+          id: string
+          is_primary: boolean | null
+          place_id: string
+          source: string
+          updated_at: string | null
+          url: string
+        }
+        Insert: {
+          attribution?: string | null
+          created_at?: string | null
+          id?: string
+          is_primary?: boolean | null
+          place_id: string
+          source: string
+          updated_at?: string | null
+          url: string
+        }
+        Update: {
+          attribution?: string | null
+          created_at?: string | null
+          id?: string
+          is_primary?: boolean | null
+          place_id?: string
+          source?: string
+          updated_at?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "place_photos_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       places: {
         Row: {
           country: string | null
@@ -77,6 +118,7 @@ export type Database = {
           metadata: Json | null
           name: string | null
           osm_id: string | null
+          photos_fetched_at: string | null
           reddit_data: Json | null
           reddit_generated: string | null
           region: string | null
@@ -110,6 +152,7 @@ export type Database = {
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
+          photos_fetched_at?: string | null
           reddit_data?: Json | null
           reddit_generated?: string | null
           region?: string | null
@@ -143,6 +186,7 @@ export type Database = {
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
+          photos_fetched_at?: string | null
           reddit_data?: Json | null
           reddit_generated?: string | null
           region?: string | null

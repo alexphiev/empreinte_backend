@@ -7,6 +7,7 @@ import { swaggerSpec } from './config/swagger'
 import { analyzePlaceWebsite, analyzePlaceWikipedia } from './controllers/place-analysis.controller'
 import { analyzeUrls } from './controllers/url-analysis.controller'
 import { verifyPlaces } from './controllers/place-verification.controller'
+import { fetchPhotos } from './controllers/photo.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -405,6 +406,93 @@ app.post('/api/urls/analyze', authenticateApiKey, strictLimiter, analyzeUrls)
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/places/verify', authenticateApiKey, strictLimiter, verifyPlaces)
+
+/**
+ * @swagger
+ * /api/places/fetch-photos:
+ *   post:
+ *     summary: Fetch photos for places that don't have any yet
+ *     description: |
+ *       Fetches photos for places that haven't had photos fetched yet (photos_fetched_at is null).
+ *       Tries Wikimedia Commons first (free), then falls back to Google Places API.
+ *       Processes places sequentially with a 1-second delay between requests.
+ *       Can optionally filter by minimum score.
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               minScore:
+ *                 type: number
+ *                 minimum: 0
+ *                 description: Optional. Only fetch photos for places with score >= minScore
+ *               limit:
+ *                 type: number
+ *                 minimum: 1
+ *                 description: Optional. Maximum number of places to process
+ *           example:
+ *             minScore: 5
+ *             limit: 50
+ *     responses:
+ *       200:
+ *         description: Successful photo fetch
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       placeId:
+ *                         type: string
+ *                         format: uuid
+ *                       placeName:
+ *                         type: string
+ *                       success:
+ *                         type: boolean
+ *                       photosFound:
+ *                         type: number
+ *                       source:
+ *                         type: string
+ *                         enum: [wikimedia, google_places, none]
+ *                       error:
+ *                         type: string
+ *                         nullable: true
+ *                 totalProcessed:
+ *                   type: number
+ *                 totalSuccess:
+ *                   type: number
+ *                 totalPhotosFound:
+ *                   type: number
+ *       400:
+ *         description: Bad request (invalid minScore)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/fetch-photos', authenticateApiKey, fetchPhotos)
 
 /**
  * @swagger
