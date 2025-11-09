@@ -478,6 +478,22 @@ REDDIT_CLIENT_SECRET=your_reddit_client_secret
 
 # Google Places API (for photos and ratings)
 GOOGLE_PLACES_API_KEY=your_google_places_api_key
+
+# Score Configuration (all optional, defaults shown)
+# Enhancement scores (points added when content is successfully analyzed)
+SCORE_ENHANCEMENT_WEBSITE=2      # Points for website analysis
+SCORE_ENHANCEMENT_REDDIT=2       # Points for Reddit analysis
+SCORE_ENHANCEMENT_WIKIPEDIA=4    # Points for Wikipedia analysis
+
+# Score bumps (points added for other operations)
+SCORE_BUMP_PHOTOS_FETCHED=2      # Points when photos are fetched for first time
+SCORE_BUMP_RATINGS_FETCHED=2     # Points when ratings are fetched for first time
+SCORE_BUMP_GENERATED_PLACE_VERIFIED=2      # Points when a generated place is verified in OSM
+
+# Source scores (base scores for places from different sources)
+SCORE_SOURCE_BASE=1              # Base score for all places
+SCORE_SOURCE_HAS_WIKIPEDIA=2     # Bonus for places with Wikipedia reference
+SCORE_SOURCE_HAS_WEBSITE=2       # Bonus for places with website
 ```
 
 ## Scripts Summary

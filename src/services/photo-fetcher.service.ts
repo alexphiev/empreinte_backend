@@ -192,16 +192,18 @@ export class PhotoFetcherService {
           .single()
 
         if (!fetchError && place) {
+          const { scoreConfig } = await import('./score-config.service')
+          const bump = scoreConfig.getPhotosFetchedBump()
           const currentScore = place.score || 0
           const currentEnhancementScore = place.enhancement_score || 0
-          const newEnhancementScore = currentEnhancementScore + 2
-          const newScore = currentScore + 2
+          const newEnhancementScore = currentEnhancementScore + bump
+          const newScore = currentScore + bump
 
           updates.score = newScore
           updates.enhancement_score = newEnhancementScore
 
           console.log(
-            `📈 Bumped scores: ${currentScore} → ${newScore} (+2 total), ${currentEnhancementScore} → ${newEnhancementScore} (+2 enhancement)`,
+            `📈 Bumped scores: ${currentScore} → ${newScore} (+${bump} total), ${currentEnhancementScore} → ${newEnhancementScore} (+${bump} enhancement)`,
           )
         }
       }

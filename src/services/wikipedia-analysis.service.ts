@@ -182,16 +182,16 @@ export async function analyzePlaceWikipediaCore(
     console.log(`   Saving wikipedia_generated (${wikipediaResult.summary.length} chars)`)
     console.log(`   Saving wikipedia_places_generated (${wikipediaResult.mentionedPlaces.length} places)`)
     console.log(`   Saving wikipedia_raw (${wikipediaContent?.length || 0} chars)`)
-    console.log(`   Saving last_wikipedia_analyzed_at timestamp`)
+    console.log(`   Saving wikipedia_analyzed_at timestamp`)
 
     const updateData: {
       wikipedia_generated: string
       wikipedia_places_generated?: string[]
       wikipedia_raw?: string
-      last_wikipedia_analyzed_at: string
+      wikipedia_analyzed_at: string
     } = {
       wikipedia_generated: wikipediaResult.summary,
-      last_wikipedia_analyzed_at: new Date().toISOString(),
+      wikipedia_analyzed_at: new Date().toISOString(),
     }
 
     if (wikipediaResult.mentionedPlaces && wikipediaResult.mentionedPlaces.length > 0) {

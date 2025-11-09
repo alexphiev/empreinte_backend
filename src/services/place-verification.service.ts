@@ -1,6 +1,7 @@
 import { getGeneratedPlacesWithoutStatus, updateGeneratedPlace } from '../db/generated-places'
 import { updatePlace } from '../db/places'
 import { getSourceById } from '../db/sources'
+import { scoreConfig } from '../services/score-config.service'
 import { supabase } from '../services/supabase.service'
 import { formatPlaceObject } from '../utils/common'
 import { overpassService } from './overpass.service'
@@ -36,7 +37,7 @@ async function searchAndCreatePlace(
   description: string | null,
   sourceId: string,
   sourceUrl: string,
-  scoreBump: number = 2,
+  scoreBump?: number,
 ): Promise<{
   status: VerificationStatus
   placeId?: string
@@ -135,8 +136,9 @@ async function searchAndCreatePlace(
 
     if (existingPlace) {
       // Place already exists with this OSM ID - update it instead of creating duplicate
+      const bump = scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump()
       const currentScore = existingPlace.source_score || 0
-      const newSourceScore = currentScore + scoreBump
+      const newSourceScore = currentScore + bump
       const newTotalScore = newSourceScore + (existingPlace.enhancement_score || 0)
 
       await updatePlace(existingPlace.id, {
@@ -151,6 +153,7 @@ async function searchAndCreatePlace(
     }
 
     // Create new place
+    const bump = scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump()
     const placeData = formatPlaceObject({
       source: sourceUrl,
       sourceId: sourceId,
@@ -160,8 +163,8 @@ async function searchAndCreatePlace(
       location: match.latitude && match.longitude ? `POINT(${match.longitude} ${match.latitude})` : null,
       geometry: match.geometry,
       description: description,
-      source_score: scoreBump,
-      score: scoreBump,
+      source_score: bump,
+      score: bump,
       country: 'France', // Default, could be improved
     })
 
@@ -173,7 +176,7 @@ async function searchAndCreatePlace(
       return { status: VerificationStatus.NO_MATCH, error: `Failed to create place: ${insertError.message}` }
     }
 
-    console.log(`✅ Created new place: ${newPlace.name} (score: ${scoreBump})`)
+    console.log(`✅ Created new place: ${newPlace.name} (score: ${bump})`)
     return { status: VerificationStatus.ADDED, placeId: newPlace.id, osmId: match.osm_id }
   } catch (error) {
     console.error(`❌ Error searching/creating place "${placeName}":`, error)
@@ -188,7 +191,8 @@ export async function verifyPlacesCore(
   options: VerificationOptions = {},
 ): Promise<{ results: VerificationResult[]; error: string | null }> {
   try {
-    const { generatedPlaceId, scoreBump = 2, limit } = options
+    const { generatedPlaceId, scoreBump, limit } = options
+    const defaultScoreBump = scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump()
 
     let generatedPlaces: Array<{
       id: string
@@ -277,7 +281,7 @@ export async function verifyPlacesCore(
         generatedPlace.description,
         generatedPlace.source_id,
         sourceUrl,
-        scoreBump,
+        defaultScoreBump,
       )
 
       // Update the generated place status

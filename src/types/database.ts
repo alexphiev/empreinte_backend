@@ -116,13 +116,12 @@ export type Database = {
           google_rating_fetched_at: string | null
           id: string
           last_enhanced_at: string | null
-          last_website_analyzed_at: string | null
-          last_wikipedia_analyzed_at: string | null
           location: unknown
           metadata: Json | null
           name: string | null
           osm_id: string | null
           photos_fetched_at: string | null
+          reddit_analyzed_at: string | null
           reddit_data: Json | null
           reddit_generated: string | null
           region: string | null
@@ -134,9 +133,11 @@ export type Database = {
           type: string | null
           updated_at: string | null
           website: string | null
+          website_analyzed_at: string | null
           website_generated: string | null
           website_places_generated: string[] | null
           website_raw: string | null
+          wikipedia_analyzed_at: string | null
           wikipedia_generated: string | null
           wikipedia_places_generated: string[] | null
           wikipedia_query: string | null
@@ -154,13 +155,12 @@ export type Database = {
           google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
-          last_website_analyzed_at?: string | null
-          last_wikipedia_analyzed_at?: string | null
           location?: unknown
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
           photos_fetched_at?: string | null
+          reddit_analyzed_at?: string | null
           reddit_data?: Json | null
           reddit_generated?: string | null
           region?: string | null
@@ -172,9 +172,11 @@ export type Database = {
           type?: string | null
           updated_at?: string | null
           website?: string | null
+          website_analyzed_at?: string | null
           website_generated?: string | null
           website_places_generated?: string[] | null
           website_raw?: string | null
+          wikipedia_analyzed_at?: string | null
           wikipedia_generated?: string | null
           wikipedia_places_generated?: string[] | null
           wikipedia_query?: string | null
@@ -192,13 +194,12 @@ export type Database = {
           google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
-          last_website_analyzed_at?: string | null
-          last_wikipedia_analyzed_at?: string | null
           location?: unknown
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
           photos_fetched_at?: string | null
+          reddit_analyzed_at?: string | null
           reddit_data?: Json | null
           reddit_generated?: string | null
           region?: string | null
@@ -210,9 +211,11 @@ export type Database = {
           type?: string | null
           updated_at?: string | null
           website?: string | null
+          website_analyzed_at?: string | null
           website_generated?: string | null
           website_places_generated?: string[] | null
           website_raw?: string | null
+          wikipedia_analyzed_at?: string | null
           wikipedia_generated?: string | null
           wikipedia_places_generated?: string[] | null
           wikipedia_query?: string | null

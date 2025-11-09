@@ -141,11 +141,13 @@ export class RatingsFetcherService {
       }
 
       // Only bump score if this is the first time collecting ratings
+      const { scoreConfig } = await import('./score-config.service')
+      const bump = scoreConfig.getRatingsFetchedBump()
       const isFirstTime = !place.google_rating
       const currentScore = place.score || 0
       const currentEnhancementScore = place.enhancement_score || 0
-      const newEnhancementScore = isFirstTime ? currentEnhancementScore + 2 : currentEnhancementScore
-      const newScore = isFirstTime ? currentScore + 2 : currentScore
+      const newEnhancementScore = isFirstTime ? currentEnhancementScore + bump : currentEnhancementScore
+      const newScore = isFirstTime ? currentScore + bump : currentScore
 
       // Prepare updates
       const updates: Partial<Place> = {
@@ -170,7 +172,7 @@ export class RatingsFetcherService {
 
       if (isFirstTime) {
         console.log(
-          `✅ Saved ratings and bumped scores: ${currentScore} → ${newScore} (+2 total), ${currentEnhancementScore} → ${newEnhancementScore} (+2 enhancement)`,
+          `✅ Saved ratings and bumped scores: ${currentScore} → ${newScore} (+${bump} total), ${currentEnhancementScore} → ${newEnhancementScore} (+${bump} enhancement)`,
         )
       } else {
         console.log(

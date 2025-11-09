@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { scoreConfig } from '../services/score-config.service'
 import { VerificationStatus, verifyPlacesCore } from '../services/place-verification.service'
 
 async function main() {
@@ -7,7 +8,7 @@ async function main() {
   const arg3 = process.argv[4]
 
   let generatedPlaceId: string | undefined
-  let scoreBump = 2
+  let scoreBump: number | undefined
   let limit: number | undefined
 
   // Parse arguments
@@ -55,7 +56,8 @@ async function main() {
   } else {
     console.log(`Verifying all generated places without status (sorted by oldest created_at)`)
   }
-  console.log(`Score bump: ${scoreBump}`)
+  const effectiveScoreBump = scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump()
+  console.log(`Score bump: ${effectiveScoreBump}${scoreBump === undefined ? ' (default from config)' : ' (custom)'}`)
   if (limit) {
     console.log(`Limit: ${limit}`)
   }

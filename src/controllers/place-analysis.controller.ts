@@ -1,4 +1,5 @@
 import { Request, Response } from 'express'
+import { analyzePlaceRedditCore } from '../services/reddit-analysis.service'
 import { analyzePlaceWebsiteCore } from '../services/website-analysis.service'
 import { analyzePlaceWikipediaCore } from '../services/wikipedia-analysis.service'
 
@@ -18,6 +19,14 @@ export interface WikipediaAnalysisResponse {
   wikipediaReference: string | null
   description: string
   mentionedPlaces: string[]
+  error?: string
+}
+
+export interface RedditAnalysisResponse {
+  placeId: string
+  placeName: string
+  description: string
+  threadsCount: number
   error?: string
 }
 
@@ -129,6 +138,61 @@ export async function analyzePlaceWikipedia(
     res.status(200).json(response)
   } catch (error) {
     console.error('❌ Error in analyzePlaceWikipedia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ error: `Internal server error: ${errorMessage}` })
+  }
+}
+
+/**
+ * Analyzes a place's Reddit discussions and extracts information using AI
+ */
+export async function analyzePlaceReddit(
+  req: Request,
+  res: Response<RedditAnalysisResponse | { error: string }>,
+): Promise<void> {
+  try {
+    const { placeId } = req.params
+
+    if (!placeId) {
+      res.status(400).json({ error: 'Place ID is required' })
+      return
+    }
+
+    console.log(`\n🔍 Starting Reddit analysis for place ID: ${placeId}`)
+
+    // Check if bypassCache query parameter is set
+    const bypassCache = req.query.bypassCache === 'true' || req.query.bypassCache === '1'
+    if (bypassCache) {
+      console.log(`🔄 Bypassing cache - will fetch fresh content`)
+    }
+
+    const { result, error } = await analyzePlaceRedditCore(placeId, { bypassCache })
+
+    if (error) {
+      if (error.includes('not found')) {
+        res.status(404).json({ error })
+      } else if (error.includes('No Reddit discussions')) {
+        res.status(404).json({ error })
+      } else {
+        res.status(500).json({ error })
+      }
+      return
+    }
+
+    console.log(`\n✅ Reddit analysis complete!`)
+    console.log(`📝 Description: ${result.description.substring(0, 100)}...`)
+    console.log(`📱 Threads analyzed: ${result.threadsCount}`)
+
+    const response: RedditAnalysisResponse = {
+      placeId: result.placeId,
+      placeName: result.placeName,
+      description: result.description,
+      threadsCount: result.threadsCount,
+    }
+
+    res.status(200).json(response)
+  } catch (error) {
+    console.error('❌ Error in analyzePlaceReddit:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     res.status(500).json({ error: `Internal server error: ${errorMessage}` })
   }

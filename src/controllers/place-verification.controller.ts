@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
-import { verifyPlacesCore, VerificationResult, VerificationStatus } from '../services/place-verification.service'
+import { VerificationResult, VerificationStatus, verifyPlacesCore } from '../services/place-verification.service'
+import { scoreConfig } from '../services/score-config.service'
 
 export interface PlaceVerificationResponse {
   results: VerificationResult[]
@@ -31,7 +32,7 @@ export async function verifyPlaces(
 
     const { results, error } = await verifyPlacesCore({
       generatedPlaceId,
-      scoreBump: scoreBump || 2,
+      scoreBump: scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump(),
       limit: limit ? parseInt(String(limit), 10) : undefined,
     })
 
@@ -55,4 +56,3 @@ export async function verifyPlaces(
     res.status(500).json({ error: `Internal server error: ${errorMessage}` })
   }
 }
-

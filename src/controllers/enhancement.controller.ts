@@ -1,8 +1,9 @@
 import { updatePlace } from '../db/places'
-import { redditService } from '../services/reddit.service'
+import { analyzePlaceRedditCore } from '../services/reddit-analysis.service'
+import { scoreConfig } from '../services/score-config.service'
 import { supabase } from '../services/supabase.service'
-import { websiteScraperService } from '../services/website-scraper.service'
-import { wikipediaService } from '../services/wikipedia.service'
+import { analyzePlaceWebsiteCore } from '../services/website-analysis.service'
+import { analyzePlaceWikipediaCore } from '../services/wikipedia-analysis.service'
 import { Tables } from '../types/database'
 
 type Place = Tables<'places'>
@@ -91,32 +92,24 @@ export class EnhancementController {
     if (place.website && (!place.website_generated || force)) {
       try {
         console.log(`🌐 Enhancing website info...`)
-        const websiteResult = await websiteScraperService.scrapeAndSummarizeWebsite(
-          place.name || 'Unknown',
-          place.website,
-        )
+        const { result: websiteResult, error: websiteError } = await analyzePlaceWebsiteCore(place.id, {
+          bypassCache: force,
+        })
 
-        if (websiteResult.summary || websiteResult.rawContent) {
-          if (websiteResult.summary && !websiteResult.summary.includes('NO_RELEVANT_INFO')) {
-            updates.website_generated = websiteResult.summary
-            enhancementScore += 2
+        if (websiteError) {
+          const errorMsg = `Website enhancement failed: ${websiteError}`
+          console.error(`❌ ${errorMsg}`)
+          result.errors.push(errorMsg)
+        } else if (websiteResult && websiteResult.description) {
+          if (!websiteResult.description.includes('NO_RELEVANT_INFO') && websiteResult.description.length > 0) {
+            // The core service already saves to database, so we just track the enhancement
+            const score = scoreConfig.getWebsiteEnhancementScore()
+            enhancementScore += score
             result.websiteEnhanced = true
-            console.log(`✅ Website enhancement successful (+2 score points)`)
-          } else if (websiteResult.summary && websiteResult.summary.includes('NO_RELEVANT_INFO')) {
-            updates.website_generated = websiteResult.summary
+            console.log(`✅ Website enhancement successful (+${score} score points)`)
+          } else {
             console.log(`✅ Website enhancement completed - no relevant content found`)
-          } else if (websiteResult.rawContent) {
-            // AI failed but we have raw content - store a placeholder and let AI retry later
-            updates.website_generated = null // Don't set to "not found" - leave for retry
-            console.log(`⚠️ Website content found but AI processing failed - stored raw content for later retry`)
           }
-
-          if (websiteResult.rawContent) {
-            updates.website_raw = websiteResult.rawContent
-          }
-        } else {
-          updates.website_generated = 'not found'
-          console.log(`❌ Website enhancement failed - no relevant content`)
         }
       } catch (error) {
         const errorMsg = `Website enhancement failed: ${error}`
@@ -126,7 +119,7 @@ export class EnhancementController {
     } else {
       console.log(`🌐 Website enhancement skipped - already enhanced`)
       if (place.website_generated && !place.website_generated.toLowerCase().includes('no_relevant_info')) {
-        enhancementScore += 2
+        enhancementScore += scoreConfig.getWebsiteEnhancementScore()
       }
     }
 
@@ -140,24 +133,24 @@ export class EnhancementController {
           return result
         }
 
-        const redditResult = await redditService.searchAndSummarizeRedditDiscussions(place.name, place.short_name)
+        const { result: redditResult, error: redditError } = await analyzePlaceRedditCore(place.id, {
+          bypassCache: force,
+        })
 
-        if (redditResult && redditResult.summary && !redditResult.summary.includes('NO_RELEVANT_INFO')) {
-          updates.reddit_generated = redditResult.summary
-          enhancementScore += 2
-          result.redditEnhanced = true
-          console.log(`✅ Reddit enhancement successful (+2 score points)`)
-        } else if (redditResult && redditResult.summary && redditResult.summary.includes('NO_RELEVANT_INFO')) {
-          updates.reddit_generated = redditResult.summary
-          console.log(`✅ Reddit enhancement completed - no relevant content found`)
-        } else {
-          updates.reddit_generated = 'not found'
-          console.log(`✅ Reddit enhancement completed - no discussions found`)
-        }
-
-        // Store raw data if available
-        if (redditResult && redditResult.rawData) {
-          updates.reddit_data = redditResult.rawData
+        if (redditError) {
+          const errorMsg = `Reddit enhancement failed: ${redditError}`
+          console.error(`❌ ${errorMsg}`)
+          result.errors.push(errorMsg)
+        } else if (redditResult && redditResult.description) {
+          if (!redditResult.description.includes('NO_RELEVANT_INFO') && redditResult.description.length > 0) {
+            // The core service already saves to database, so we just track the enhancement
+            const score = scoreConfig.getRedditEnhancementScore()
+            enhancementScore += score
+            result.redditEnhanced = true
+            console.log(`✅ Reddit enhancement successful (+${score} score points)`)
+          } else {
+            console.log(`✅ Reddit enhancement completed - no relevant content found`)
+          }
         }
       } catch (error) {
         const errorMsg = `Reddit enhancement failed: ${error}`
@@ -167,7 +160,7 @@ export class EnhancementController {
     } else {
       console.log(`🌐 Reddit enhancement skipped - already enhanced`)
       if (place.reddit_generated && !place.reddit_generated.toLowerCase().includes('no_relevant_info')) {
-        enhancementScore += 2
+        enhancementScore += scoreConfig.getRedditEnhancementScore()
       }
     }
 
@@ -176,53 +169,30 @@ export class EnhancementController {
       try {
         console.log(`📚 Enhancing Wikipedia info...`)
 
-        let wikipediaResult: {
-          summary: string | null
-          rawContent: string | null
-          mentionedPlaces: string[]
-        } | null = null
+        const { result: wikipediaResult, error: wikipediaError } = await analyzePlaceWikipediaCore(place.id, {
+          bypassCache: force,
+        })
 
-        // First check if place has a wikipedia field in metadata
-        const metadata = place.metadata as any
-        if (metadata && metadata.wikipedia) {
-          wikipediaResult = await wikipediaService.fetchAndSummarizeWikipedia(
-            place.name || 'Unknown',
-            metadata.wikipedia,
-          )
-        }
-
-        // If no metadata wikipedia, try searching by place name
-        if (!wikipediaResult || (!wikipediaResult.summary && !wikipediaResult.rawContent)) {
-          wikipediaResult = await wikipediaService.searchWikipediaByPlaceName(place.name || 'Unknown')
-        }
-
-        if (wikipediaResult && (wikipediaResult.summary || wikipediaResult.rawContent)) {
-          if (wikipediaResult.summary && !wikipediaResult.summary.includes('NO_RELEVANT_INFO')) {
-            updates.wikipedia_generated = wikipediaResult.summary
-            enhancementScore += 4
+        if (wikipediaError) {
+          // If it's just "no Wikipedia article found", that's okay - not an error
+          if (wikipediaError.includes('No Wikipedia article')) {
+            console.log(`✅ Wikipedia enhancement completed - no Wikipedia article found`)
+            // Don't add to errors, just continue
+          } else {
+            const errorMsg = `Wikipedia enhancement failed: ${wikipediaError}`
+            console.error(`❌ ${errorMsg}`)
+            result.errors.push(errorMsg)
+          }
+        } else if (wikipediaResult && wikipediaResult.description) {
+          if (!wikipediaResult.description.includes('NO_RELEVANT_INFO') && wikipediaResult.description.length > 0) {
+            // The core service already saves to database, so we just track the enhancement
+            const score = scoreConfig.getWikipediaEnhancementScore()
+            enhancementScore += score
             result.wikipediaEnhanced = true
-            console.log(`✅ Wikipedia enhancement successful (+4 score points)`)
-          } else if (wikipediaResult.summary && wikipediaResult.summary.includes('NO_RELEVANT_INFO')) {
-            updates.wikipedia_generated = wikipediaResult.summary
+            console.log(`✅ Wikipedia enhancement successful (+${score} score points)`)
+          } else {
             console.log(`✅ Wikipedia enhancement completed - no relevant content found`)
-          } else if (wikipediaResult.rawContent) {
-            // AI failed but we have raw content - store a placeholder and let AI retry later
-            updates.wikipedia_generated = null // Don't set to "not found" - leave for retry
-            console.log(`⚠️ Wikipedia content found but AI processing failed - stored raw content for later retry`)
           }
-
-          // Save mentioned places if any were extracted
-          if (wikipediaResult.mentionedPlaces && wikipediaResult.mentionedPlaces.length > 0) {
-            updates.wikipedia_places_generated = wikipediaResult.mentionedPlaces
-            console.log(`✅ Saved ${wikipediaResult.mentionedPlaces.length} mentioned places from Wikipedia`)
-          }
-
-          if (wikipediaResult.rawContent) {
-            updates.wikipedia_raw = wikipediaResult.rawContent
-          }
-        } else {
-          updates.wikipedia_generated = 'not found'
-          console.log(`❌ Wikipedia enhancement failed - no relevant content`)
         }
       } catch (error) {
         const errorMsg = `Wikipedia enhancement failed: ${error}`
@@ -232,7 +202,7 @@ export class EnhancementController {
     } else {
       console.log(`🌐 Wikipedia enhancement skipped - already enhanced`)
       if (place.wikipedia_generated && !place.wikipedia_generated.toLowerCase().includes('no_relevant_info')) {
-        enhancementScore += 4
+        enhancementScore += scoreConfig.getWikipediaEnhancementScore()
       }
     }
 

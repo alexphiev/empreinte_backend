@@ -1,4 +1,5 @@
 import { Tables } from '../types/database'
+import { scoreConfig } from './score-config.service'
 
 type Place = Tables<'places'>
 
@@ -26,19 +27,19 @@ export function calculateEnhancementScore(place: Place): EnhancementScoreCalcula
   let redditScore = 0
   let wikipediaScore = 0
 
-  // Website enhancement (+2 points)
+  // Website enhancement
   if (isValidEnhancement(place.website_generated)) {
-    websiteScore = 2
+    websiteScore = scoreConfig.getWebsiteEnhancementScore()
   }
 
-  // Reddit enhancement (+2 points)
+  // Reddit enhancement
   if (isValidEnhancement(place.reddit_generated)) {
-    redditScore = 2
+    redditScore = scoreConfig.getRedditEnhancementScore()
   }
 
-  // Wikipedia enhancement (+4 points)
+  // Wikipedia enhancement
   if (isValidEnhancement(place.wikipedia_generated)) {
-    wikipediaScore = 4
+    wikipediaScore = scoreConfig.getWikipediaEnhancementScore()
   }
 
   const totalEnhancementScore = websiteScore + redditScore + wikipediaScore

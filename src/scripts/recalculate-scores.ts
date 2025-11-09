@@ -52,14 +52,15 @@ async function recalculateScores() {
       const newEnhancementScore = scoreCalculation.totalEnhancementScore
       const newTotalScore = scoreCalculation.totalScore
 
+      const { scoreConfig } = await import('../services/score-config.service')
       if (scoreCalculation.websiteScore > 0) {
-        console.log('  ✅ Website enhancement found (+2 points)')
+        console.log(`  ✅ Website enhancement found (+${scoreConfig.getWebsiteEnhancementScore()} points)`)
       }
       if (scoreCalculation.redditScore > 0) {
-        console.log('  ✅ Reddit enhancement found (+2 points)')
+        console.log(`  ✅ Reddit enhancement found (+${scoreConfig.getRedditEnhancementScore()} points)`)
       }
       if (scoreCalculation.wikipediaScore > 0) {
-        console.log('  ✅ Wikipedia enhancement found (+4 points)')
+        console.log(`  ✅ Wikipedia enhancement found (+${scoreConfig.getWikipediaEnhancementScore()} points)`)
       }
 
       const result: ScoreRecalculationResult = {

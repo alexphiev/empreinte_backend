@@ -25,6 +25,7 @@
     "migrate-place-types": "ts-node src/scripts/migrate-place-types.ts",
     "analyze-place-website": "ts-node src/scripts/analyze-place-website.ts",
     "analyze-place-wikipedia": "ts-node src/scripts/analyze-place-wikipedia.ts",
+    "analyze-place-reddit": "ts-node src/scripts/analyze-place-reddit.ts",
     "analyze-urls": "ts-node src/scripts/analyze-urls.ts",
     "verify-places": "ts-node src/scripts/verify-places.ts",
     "fetch-photos": "ts-node src/scripts/fetch-photos.ts",

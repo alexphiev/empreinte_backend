@@ -143,13 +143,13 @@ export async function analyzePlaceWebsiteCore(
     console.log(`   Saving website_generated (${summary.length} chars)`)
     console.log(`   Saving website_places_generated (${mentionedPlaces.length} places)`)
     console.log(`   Saving website_raw (${scrapedContent.length} chars)`)
-    console.log(`   Saving last_website_analyzed_at timestamp`)
+    console.log(`   Saving website_analyzed_at timestamp`)
 
     const updateResult = await updatePlace(place.id, {
       website_generated: summary,
       website_places_generated: mentionedPlaces,
       website_raw: scrapedContent,
-      last_website_analyzed_at: new Date().toISOString(),
+      website_analyzed_at: new Date().toISOString(),
     })
 
     if (updateResult.error) {

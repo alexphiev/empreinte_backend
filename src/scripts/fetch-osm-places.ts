@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { departments, getDepartmentByCode } from '../data/department.data'
 import { overpassService } from '../services/overpass.service'
+import { scoreConfig } from '../services/score-config.service'
 import {
   batchUpsert,
   createProcessStats,
@@ -20,17 +21,17 @@ class NaturePlacesFetcher {
   }
 
   private preparePlace(place: any, department: string): any {
-    let source_score = 1
+    let source_score = scoreConfig.getSourceBaseScore()
     const location = place.latitude && place.longitude ? createPointWKT(place.longitude, place.latitude) : null
 
     const wikipedia_query = place.tags?.wikipedia || place.tags?.['wikipedia:fr'] || null
     if (wikipedia_query) {
-      source_score += 2
+      source_score += scoreConfig.getSourceHasWikipediaScore()
     }
 
     const website = place.tags?.website || null
     if (website) {
-      source_score += 2
+      source_score += scoreConfig.getSourceHasWebsiteScore()
     }
 
     return formatPlaceObject({
