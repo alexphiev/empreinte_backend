@@ -292,6 +292,47 @@ pnpm fetch-photos --limit 10
 - `--minScore`: Optional. Only fetch photos for places with score >= minScore
 - `--limit`: Optional. Maximum number of places to process
 
+### Fetch Ratings for Places
+
+Fetch ratings from Google Places API for places that need them:
+
+```bash
+pnpm fetch-ratings [--minScore=<number>] [--limit=<number>]
+```
+
+**What it does**:
+
+1. Finds places that haven't had ratings fetched yet, or were fetched more than 6 months ago
+2. Optionally filters by minimum score
+3. Uses existing Google Places ID if available, otherwise searches for it by name/coordinates
+4. Fetches rating and review count from Google Places API
+5. Stores Google Places ID for future use
+6. Sets `google_rating_fetched_at` timestamp to prevent refetching
+7. Adds +2 score bump when ratings are first collected (not on refresh)
+
+**Examples**:
+
+```bash
+# Fetch ratings for all places that need them
+pnpm fetch-ratings
+
+# Fetch ratings only for places with score >= 5
+pnpm fetch-ratings --minScore 5
+
+# Fetch ratings for first 50 places with score >= 5
+pnpm fetch-ratings --minScore 5 --limit 50
+
+# Fetch ratings for first 10 places (any score)
+pnpm fetch-ratings --limit 10
+```
+
+**Parameters**:
+
+- `--minScore`: Optional. Only fetch ratings for places with score >= minScore
+- `--limit`: Optional. Maximum number of places to process
+
+**Note**: Ratings are refreshed every 6 months. Places with ratings fetched less than 6 months ago will be skipped.
+
 ## Data Enhancement System
 
 The application includes a comprehensive system for enhancing place data with information from multiple sources:
@@ -398,6 +439,7 @@ The API provides endpoints for analyzing places. Full interactive documentation 
 - **POST `/api/urls/analyze`**: Analyze URLs and extract nature places
 - **POST `/api/places/verify`**: Verify generated places and create/update real places in OSM
 - **POST `/api/places/fetch-photos`**: Fetch photos for places that don't have any yet
+- **POST `/api/places/fetch-ratings`**: Fetch ratings from Google Places API for places that need them
 - **POST `/test`**: Test endpoint to verify API key authentication
 
 **Rate Limits**:
@@ -433,25 +475,29 @@ ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated list
 # Reddit API (for enhancement)
 REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
+
+# Google Places API (for photos and ratings)
+GOOGLE_PLACES_API_KEY=your_google_places_api_key
 ```
 
 ## Scripts Summary
 
-| Script                        | Purpose                         | Usage                                                    |
-| ----------------------------- | ------------------------------- | -------------------------------------------------------- |
-| `fetch-osm-places`            | Fetch places from OpenStreetMap | `pnpm fetch-osm-places <dept> [--limit=N]`               |
-| `fetch-overture-places`       | Fetch places from Overture Maps | `pnpm fetch-overture-places`                             |
-| `fetch-french-regional-parks` | Import French regional parks    | `pnpm fetch-french-regional-parks [--force] [--limit=N]` |
-| `fetch-french-national-parks` | Import French national parks    | `pnpm fetch-french-national-parks [--force] [--limit=N]` |
-| `remove-places`               | Remove places by source         | `pnpm remove-places <source>`                            |
-| `enhance-places`              | Enhance place data with AI      | `pnpm enhance-places [list\|all\|<id>] [force]`          |
-| `analyze-place-website`       | Analyze a place's website       | `pnpm analyze-place-website <place-id>`                  |
-| `analyze-place-wikipedia`     | Analyze a place's Wikipedia     | `pnpm analyze-place-wikipedia <place-id>`                |
-| `analyze-urls`                | Analyze URLs and extract places | `pnpm analyze-urls <url1> [url2] ...`                    |
-| `verify-places`               | Verify generated places in OSM  | `pnpm verify-places <sourceId> [scoreBump]`              |
-| `fetch-photos`                | Fetch photos for places         | `pnpm fetch-photos [--minScore=N] [--limit=N]`           |
-| `recalculate-scores`          | Recalculate place scores        | `pnpm recalculate-scores`                                |
-| `migrate-place-types`         | Migrate place types             | `pnpm migrate-place-types`                               |
-| `generate-types`              | Generate DB types               | `pnpm generate-types`                                    |
-| `clear-osm-cache`             | Clear OSM cache                 | `pnpm clear-osm-cache`                                   |
-| `clear-overture-cache`        | Clear Overture cache            | `pnpm clear-overture-cache`                              |
+| Script                        | Purpose                          | Usage                                                    |
+| ----------------------------- | -------------------------------- | -------------------------------------------------------- |
+| `fetch-osm-places`            | Fetch places from OpenStreetMap  | `pnpm fetch-osm-places <dept> [--limit=N]`               |
+| `fetch-overture-places`       | Fetch places from Overture Maps  | `pnpm fetch-overture-places`                             |
+| `fetch-french-regional-parks` | Import French regional parks     | `pnpm fetch-french-regional-parks [--force] [--limit=N]` |
+| `fetch-french-national-parks` | Import French national parks     | `pnpm fetch-french-national-parks [--force] [--limit=N]` |
+| `remove-places`               | Remove places by source          | `pnpm remove-places <source>`                            |
+| `enhance-places`              | Enhance place data with AI       | `pnpm enhance-places [list\|all\|<id>] [force]`          |
+| `analyze-place-website`       | Analyze a place's website        | `pnpm analyze-place-website <place-id>`                  |
+| `analyze-place-wikipedia`     | Analyze a place's Wikipedia      | `pnpm analyze-place-wikipedia <place-id>`                |
+| `analyze-urls`                | Analyze URLs and extract places  | `pnpm analyze-urls <url1> [url2] ...`                    |
+| `verify-places`               | Verify generated places in OSM   | `pnpm verify-places <sourceId> [scoreBump]`              |
+| `fetch-photos`                | Fetch photos for places          | `pnpm fetch-photos [--minScore=N] [--limit=N]`           |
+| `fetch-ratings`               | Fetch ratings from Google Places | `pnpm fetch-ratings [--minScore=N] [--limit=N]`          |
+| `recalculate-scores`          | Recalculate place scores         | `pnpm recalculate-scores`                                |
+| `migrate-place-types`         | Migrate place types              | `pnpm migrate-place-types`                               |
+| `generate-types`              | Generate DB types                | `pnpm generate-types`                                    |
+| `clear-osm-cache`             | Clear OSM cache                  | `pnpm clear-osm-cache`                                   |
+| `clear-overture-cache`        | Clear Overture cache             | `pnpm clear-overture-cache`                              |

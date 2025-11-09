@@ -8,6 +8,7 @@ import { analyzePlaceWebsite, analyzePlaceWikipedia } from './controllers/place-
 import { analyzeUrls } from './controllers/url-analysis.controller'
 import { verifyPlaces } from './controllers/place-verification.controller'
 import { fetchPhotos } from './controllers/photo.controller'
+import { fetchRatings } from './controllers/ratings.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -493,6 +494,96 @@ app.post('/api/places/verify', authenticateApiKey, strictLimiter, verifyPlaces)
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/places/fetch-photos', authenticateApiKey, fetchPhotos)
+
+/**
+ * @swagger
+ * /api/places/fetch-ratings:
+ *   post:
+ *     summary: Fetch ratings for places from Google Places API
+ *     description: |
+ *       Fetches ratings for places that haven't been fetched yet or were fetched more than 6 months ago.
+ *       Uses existing Google Places ID if available, otherwise searches for it.
+ *       Processes places sequentially with a 1-second delay between requests.
+ *       Can optionally filter by minimum score.
+ *       Adds +2 score bump for places where ratings are collected.
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               minScore:
+ *                 type: number
+ *                 minimum: 0
+ *                 description: Optional. Only fetch ratings for places with score >= minScore
+ *               limit:
+ *                 type: number
+ *                 minimum: 1
+ *                 description: Optional. Maximum number of places to process
+ *           example:
+ *             minScore: 5
+ *             limit: 50
+ *     responses:
+ *       200:
+ *         description: Successful ratings fetch
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       placeId:
+ *                         type: string
+ *                         format: uuid
+ *                       placeName:
+ *                         type: string
+ *                       success:
+ *                         type: boolean
+ *                       rating:
+ *                         type: number
+ *                         nullable: true
+ *                       ratingCount:
+ *                         type: number
+ *                         nullable: true
+ *                       googlePlacesId:
+ *                         type: string
+ *                         nullable: true
+ *                       error:
+ *                         type: string
+ *                         nullable: true
+ *                 totalProcessed:
+ *                   type: number
+ *                 totalSuccess:
+ *                   type: number
+ *       400:
+ *         description: Bad request (invalid minScore or limit)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/fetch-ratings', authenticateApiKey, fetchRatings)
 
 /**
  * @swagger

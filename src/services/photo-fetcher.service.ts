@@ -1,9 +1,8 @@
+import { createPlacePhotos, hasPlacePhotos, setPrimaryPhoto } from '../db/place-photos'
+import { Place, updatePlace } from '../db/places'
 import { calculateGeometryCenter } from '../utils/common'
-import { createPlacePhotos, setPrimaryPhoto } from '../db/place-photos'
-import { updatePlace } from '../db/places'
-import { googlePlacesPhotosService, GooglePlacesPhoto } from './google-places-photos.service'
-import { wikimediaPhotosService, WikimediaPhoto } from './wikimedia-photos.service'
-import { Place } from '../db/places'
+import { GooglePlacesPhoto, googlePlacesPhotosService } from './google-places.service'
+import { WikimediaPhoto, wikimediaPhotosService } from './wikimedia-photos.service'
 
 export interface PhotoFetchResult {
   placeId: string
@@ -43,6 +42,9 @@ export class PhotoFetcherService {
         console.log(`📍 Location: ${latitude}, ${longitude}`)
       }
 
+      // Check if this is the first time fetching photos (before we save any)
+      const hadPhotosBefore = await hasPlacePhotos(place.id)
+
       // Try Wikimedia first (free)
       console.log(`1️⃣ Trying Wikimedia Commons...`)
       const wikimediaPhotos = await wikimediaPhotosService.searchPlacePhotos(
@@ -58,7 +60,7 @@ export class PhotoFetcherService {
         result.success = true
         result.photosFound = wikimediaPhotos.length
         result.source = 'wikimedia'
-        await this.markPhotosFetched(place.id)
+        await this.markPhotosFetched(place.id, true, hadPhotosBefore)
         return result
       }
 
@@ -67,14 +69,20 @@ export class PhotoFetcherService {
       if (latitude === null || longitude === null) {
         console.log(`⚠️ No coordinates available, skipping Google Places search`)
         result.error = 'No coordinates available for Google Places search'
-        await this.markPhotosFetched(place.id)
+        // Mark as fetched to avoid repeated attempts (no coordinates available)
+        await this.markPhotosFetched(place.id, false, hadPhotosBefore)
         return result
       }
 
-      const googlePhotos = await googlePlacesPhotosService.searchPlacePhotos(
+      // Check if place already has a Google Places ID
+      // Note: google_places_id will be available after running the schema migration
+      const existingGooglePlacesId = (place as any).google_places_id || null
+
+      const { photos: googlePhotos, googlePlacesId } = await googlePlacesPhotosService.searchPlacePhotos(
         place.name,
         latitude,
         longitude,
+        existingGooglePlacesId,
       )
 
       if (googlePhotos.length > 0) {
@@ -83,19 +91,39 @@ export class PhotoFetcherService {
         result.success = true
         result.photosFound = googlePhotos.length
         result.source = 'google_places'
-        await this.markPhotosFetched(place.id)
+
+        // Store Google Places ID if we found one and it's different from existing
+        if (googlePlacesId && googlePlacesId !== existingGooglePlacesId) {
+          console.log(`💾 Storing Google Places ID: ${googlePlacesId}`)
+          await updatePlace(place.id, {
+            google_places_id: googlePlacesId,
+          })
+        }
+
+        await this.markPhotosFetched(place.id, true, hadPhotosBefore)
         return result
+      }
+
+      // Even if no photos found, store the Google Places ID if we found one
+      if (googlePlacesId && googlePlacesId !== existingGooglePlacesId) {
+        console.log(`💾 Storing Google Places ID (no photos found): ${googlePlacesId}`)
+        await updatePlace(place.id, {
+          google_places_id: googlePlacesId,
+        })
       }
 
       console.log(`❌ No photos found from any source`)
       result.error = 'No photos found'
-      await this.markPhotosFetched(place.id)
+      // Mark as fetched to avoid repeated attempts (even though no photos found)
+      await this.markPhotosFetched(place.id, false, hadPhotosBefore)
       return result
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       console.error(`❌ Error fetching photos:`, errorMessage)
       result.error = errorMessage
-      await this.markPhotosFetched(place.id)
+      // Check if photos existed before in case of error
+      const hadPhotosBefore = await hasPlacePhotos(place.id)
+      await this.markPhotosFetched(place.id, false, hadPhotosBefore)
       return result
     }
   }
@@ -143,12 +171,42 @@ export class PhotoFetcherService {
 
   /**
    * Mark that photos have been fetched for this place
+   * If photos were successfully fetched for the first time, bump scores by +2
    */
-  private async markPhotosFetched(placeId: string): Promise<void> {
+  private async markPhotosFetched(placeId: string, photosFound: boolean, hadPhotosBefore: boolean): Promise<void> {
     try {
-      await updatePlace(placeId, {
+      // Check if this is the first time photos are being fetched
+      const isFirstTime = !hadPhotosBefore && photosFound
+
+      let updates: Partial<Place> = {
         photos_fetched_at: new Date().toISOString(),
-      })
+      }
+
+      // If this is the first time photos are fetched, bump scores
+      if (isFirstTime) {
+        const { supabase } = await import('../services/supabase.service')
+        const { data: place, error: fetchError } = await supabase
+          .from('places')
+          .select('score, enhancement_score')
+          .eq('id', placeId)
+          .single()
+
+        if (!fetchError && place) {
+          const currentScore = place.score || 0
+          const currentEnhancementScore = place.enhancement_score || 0
+          const newEnhancementScore = currentEnhancementScore + 2
+          const newScore = currentScore + 2
+
+          updates.score = newScore
+          updates.enhancement_score = newEnhancementScore
+
+          console.log(
+            `📈 Bumped scores: ${currentScore} → ${newScore} (+2 total), ${currentEnhancementScore} → ${newEnhancementScore} (+2 enhancement)`,
+          )
+        }
+      }
+
+      await updatePlace(placeId, updates)
     } catch (error) {
       console.error(`❌ Error marking photos as fetched:`, error)
       // Don't throw - this is not critical
@@ -164,4 +222,3 @@ export class PhotoFetcherService {
 }
 
 export const photoFetcherService = new PhotoFetcherService()
-

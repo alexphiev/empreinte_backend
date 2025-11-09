@@ -110,6 +110,10 @@ export type Database = {
           description: string | null
           enhancement_score: number | null
           geometry: unknown
+          google_places_id: string | null
+          google_rating: number | null
+          google_rating_count: number | null
+          google_rating_fetched_at: string | null
           id: string
           last_enhanced_at: string | null
           last_website_analyzed_at: string | null
@@ -144,6 +148,10 @@ export type Database = {
           description?: string | null
           enhancement_score?: number | null
           geometry?: unknown
+          google_places_id?: string | null
+          google_rating?: number | null
+          google_rating_count?: number | null
+          google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
           last_website_analyzed_at?: string | null
@@ -178,6 +186,10 @@ export type Database = {
           description?: string | null
           enhancement_score?: number | null
           geometry?: unknown
+          google_places_id?: string | null
+          google_rating?: number | null
+          google_rating_count?: number | null
+          google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
           last_website_analyzed_at?: string | null
