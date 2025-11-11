@@ -1,4 +1,4 @@
-import { summarizeWikipediaContent, extractMentionedPlaces } from './ai.service'
+import { extractMentionedPlaces, summarizeWikipediaContent } from './ai.service'
 
 interface WikipediaSearchResult {
   query: {
@@ -97,8 +97,14 @@ export class WikipediaService {
         return null
       }
 
+      // Store full content (up to reasonable limit for AI processing)
+      // Wikipedia articles can be very long, so we limit to 10000 chars for storage
+      // but pass full content to AI for better summaries
+      const fullContent = page.extract
+      const contentForStorage = fullContent.length > 10000 ? fullContent.substring(0, 10000) + '...' : fullContent
+
       return {
-        content: page.extract.slice(0, 3000), // Limit content to avoid token limits
+        content: contentForStorage,
         articleTitle: pageTitle,
       }
     } catch (error) {
@@ -133,14 +139,16 @@ export class WikipediaService {
 
       const wikipediaContent = searchResult.content
 
-      // Always store raw content, with more generous limit for AI processing
-      const rawContent = wikipediaContent.length > 4000 ? wikipediaContent.substring(0, 4000) + '...' : wikipediaContent
+      // Store raw content (already limited to 10000 chars in searchWikipediaArticle)
+      // Use the same content for AI processing
+      const rawContent = wikipediaContent
 
       console.log(`📄 Retrieved ${wikipediaContent.length} characters from Wikipedia`)
       console.log(`📝 Summarizing content...`)
       console.log(`📍 Extracting mentioned places...`)
 
       // Two separate LLM calls in parallel - summarization and place extraction
+      // Pass full content to AI (up to 10000 chars) for better summaries
       const [summary, mentionedPlaces] = await Promise.all([
         summarizeWikipediaContent(placeName, wikipediaContent),
         extractMentionedPlaces(placeName, wikipediaContent),
@@ -184,18 +192,19 @@ export class WikipediaService {
         const searchResult = await this.searchWikipediaArticle(placeName, language)
         if (searchResult) {
           console.log(`📄 Found Wikipedia content in ${language}`)
-          
+
           const content = searchResult.content
           const articleTitle = searchResult.articleTitle
           const wikipediaReference = `${language}:${articleTitle}`
-          
+
           console.log(`📝 Summarizing content...`)
           console.log(`📍 Extracting mentioned places...`)
 
-          // Always store raw content, with more generous limit for AI processing
-          const rawContent = content.length > 4000 ? content.substring(0, 4000) + '...' : content
+          // Store raw content (already limited to 10000 chars in searchWikipediaArticle)
+          const rawContent = content
 
           // Two separate LLM calls in parallel - summarization and place extraction
+          // Pass full content to AI (up to 10000 chars) for better summaries
           const [summary, mentionedPlaces] = await Promise.all([
             summarizeWikipediaContent(placeName, content),
             extractMentionedPlaces(placeName, content),
@@ -221,7 +230,6 @@ export class WikipediaService {
       return { summary: null, rawContent: null, mentionedPlaces: [], wikipediaReference: null }
     }
   }
-
 }
 
 export const wikipediaService = new WikipediaService()

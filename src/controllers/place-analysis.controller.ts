@@ -1,5 +1,7 @@
 import { Request, Response } from 'express'
+import { Place } from '../db/places'
 import { analyzePlaceRedditCore } from '../services/reddit-analysis.service'
+import { supabase } from '../services/supabase.service'
 import { analyzePlaceWebsiteCore } from '../services/website-analysis.service'
 import { analyzePlaceWikipediaCore } from '../services/wikipedia-analysis.service'
 
@@ -28,6 +30,20 @@ export interface RedditAnalysisResponse {
   description: string
   threadsCount: number
   error?: string
+}
+
+export interface BatchWebsiteAnalysisResponse {
+  results: Array<PlaceAnalysisResponse & { error?: string }>
+  totalProcessed: number
+  totalSuccess: number
+  totalErrors: number
+}
+
+export interface BatchWikipediaAnalysisResponse {
+  results: Array<WikipediaAnalysisResponse & { error?: string }>
+  totalProcessed: number
+  totalSuccess: number
+  totalErrors: number
 }
 
 /**
@@ -193,6 +209,261 @@ export async function analyzePlaceReddit(
     res.status(200).json(response)
   } catch (error) {
     console.error('❌ Error in analyzePlaceReddit:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ error: `Internal server error: ${errorMessage}` })
+  }
+}
+
+/**
+ * Batch analyzes places' websites
+ */
+export async function batchAnalyzePlaceWebsites(
+  req: Request,
+  res: Response<BatchWebsiteAnalysisResponse | { error: string }>,
+): Promise<void> {
+  try {
+    const limit = req.body.limit ? Number(req.body.limit) : undefined
+    const bypassCache = req.body.bypass === true || req.body.bypass === 'true' || req.body.bypass === '1'
+
+    if (limit !== undefined && (isNaN(limit) || limit < 1)) {
+      res.status(400).json({ error: 'limit must be a positive number' })
+      return
+    }
+
+    console.log(`\n🔍 Starting batch website analysis`)
+    if (limit !== undefined) {
+      console.log(`🔢 Limit: ${limit} places`)
+    }
+    if (bypassCache) {
+      console.log(`🔄 Bypassing cache - will fetch fresh content`)
+    }
+
+    // Get places with websites that haven't been analyzed (or all if bypassing)
+    let query = supabase.from('places').select('*').not('website', 'is', null) // Places that have a website
+
+    if (!bypassCache) {
+      // Only get places that haven't been analyzed yet
+      query = query.is('website_analyzed_at', null)
+    }
+
+    // Order by score descending to prioritize higher-scored places
+    query = query.order('score', { ascending: false })
+
+    if (limit !== undefined) {
+      query = query.limit(limit)
+    }
+
+    const { data: placesToProcess, error: queryError } = await query
+
+    if (queryError) {
+      console.error('❌ Error fetching places:', queryError)
+      res.status(500).json({ error: `Database error: ${queryError.message}` })
+      return
+    }
+
+    if (!placesToProcess || placesToProcess.length === 0) {
+      res.status(200).json({
+        results: [],
+        totalProcessed: 0,
+        totalSuccess: 0,
+        totalErrors: 0,
+      })
+      return
+    }
+
+    console.log(`📋 Found ${placesToProcess.length} places to process`)
+
+    const results: BatchWebsiteAnalysisResponse['results'] = []
+
+    // Process places one by one
+    for (let i = 0; i < placesToProcess.length; i++) {
+      const place = placesToProcess[i] as Place
+      console.log(`\n📍 Processing place ${i + 1}/${placesToProcess.length}: ${place.name}`)
+
+      try {
+        const { result, error } = await analyzePlaceWebsiteCore(place.id, { bypassCache })
+
+        if (error) {
+          results.push({
+            placeId: place.id,
+            placeName: place.name || 'Unknown',
+            website: place.website,
+            description: '',
+            mentionedPlaces: [],
+            scrapedPagesCount: 0,
+            error,
+          })
+        } else {
+          results.push({
+            placeId: result.placeId,
+            placeName: result.placeName,
+            website: result.website,
+            description: result.description,
+            mentionedPlaces: result.mentionedPlaces,
+            scrapedPagesCount: result.scrapedPagesCount,
+          })
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        results.push({
+          placeId: place.id,
+          placeName: place.name || 'Unknown',
+          website: place.website,
+          description: '',
+          mentionedPlaces: [],
+          scrapedPagesCount: 0,
+          error: errorMessage,
+        })
+      }
+
+      // Add small delay between requests (except for the last one)
+      if (i < placesToProcess.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+    }
+
+    const totalSuccess = results.filter((r) => !r.error).length
+    const totalErrors = results.filter((r) => r.error).length
+
+    console.log(`\n✅ Batch website analysis complete!`)
+    console.log(`📊 Processed: ${results.length}`)
+    console.log(`✅ Success: ${totalSuccess}`)
+    console.log(`❌ Errors: ${totalErrors}`)
+
+    res.status(200).json({
+      results,
+      totalProcessed: results.length,
+      totalSuccess,
+      totalErrors,
+    })
+  } catch (error) {
+    console.error('❌ Error in batchAnalyzePlaceWebsites:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ error: `Internal server error: ${errorMessage}` })
+  }
+}
+
+/**
+ * Batch analyzes places' Wikipedia pages
+ */
+export async function batchAnalyzePlaceWikipedias(
+  req: Request,
+  res: Response<BatchWikipediaAnalysisResponse | { error: string }>,
+): Promise<void> {
+  try {
+    const limit = req.body.limit ? Number(req.body.limit) : undefined
+    const bypassCache = req.body.bypass === true || req.body.bypass === 'true' || req.body.bypass === '1'
+
+    if (limit !== undefined && (isNaN(limit) || limit < 1)) {
+      res.status(400).json({ error: 'limit must be a positive number' })
+      return
+    }
+
+    console.log(`\n🔍 Starting batch Wikipedia analysis`)
+    if (limit !== undefined) {
+      console.log(`🔢 Limit: ${limit} places`)
+    }
+    if (bypassCache) {
+      console.log(`🔄 Bypassing cache - will fetch fresh content`)
+    }
+
+    // Get places that haven't been analyzed (or all if bypassing)
+    let query = supabase.from('places').select('*')
+
+    if (!bypassCache) {
+      // Only get places that haven't been analyzed yet
+      query = query.is('wikipedia_analyzed_at', null)
+    }
+
+    // Order by score descending to prioritize higher-scored places
+    query = query.order('score', { ascending: false })
+
+    if (limit !== undefined) {
+      query = query.limit(limit)
+    }
+
+    const { data: placesToProcess, error: queryError } = await query
+
+    if (queryError) {
+      console.error('❌ Error fetching places:', queryError)
+      res.status(500).json({ error: `Database error: ${queryError.message}` })
+      return
+    }
+
+    if (!placesToProcess || placesToProcess.length === 0) {
+      res.status(200).json({
+        results: [],
+        totalProcessed: 0,
+        totalSuccess: 0,
+        totalErrors: 0,
+      })
+      return
+    }
+
+    console.log(`📋 Found ${placesToProcess.length} places to process`)
+
+    const results: BatchWikipediaAnalysisResponse['results'] = []
+
+    // Process places one by one
+    for (let i = 0; i < placesToProcess.length; i++) {
+      const place = placesToProcess[i] as Place
+      console.log(`\n📍 Processing place ${i + 1}/${placesToProcess.length}: ${place.name}`)
+
+      try {
+        const { result, error } = await analyzePlaceWikipediaCore(place.id, { bypassCache })
+
+        if (error) {
+          results.push({
+            placeId: place.id,
+            placeName: place.name || 'Unknown',
+            wikipediaReference: null,
+            description: '',
+            mentionedPlaces: [],
+            error,
+          })
+        } else {
+          results.push({
+            placeId: result.placeId,
+            placeName: result.placeName,
+            wikipediaReference: result.wikipediaReference,
+            description: result.description,
+            mentionedPlaces: result.mentionedPlaces,
+          })
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        results.push({
+          placeId: place.id,
+          placeName: place.name || 'Unknown',
+          wikipediaReference: null,
+          description: '',
+          mentionedPlaces: [],
+          error: errorMessage,
+        })
+      }
+
+      // Add small delay between requests (except for the last one)
+      if (i < placesToProcess.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+    }
+
+    const totalSuccess = results.filter((r) => !r.error).length
+    const totalErrors = results.filter((r) => r.error).length
+
+    console.log(`\n✅ Batch Wikipedia analysis complete!`)
+    console.log(`📊 Processed: ${results.length}`)
+    console.log(`✅ Success: ${totalSuccess}`)
+    console.log(`❌ Errors: ${totalErrors}`)
+
+    res.status(200).json({
+      results,
+      totalProcessed: results.length,
+      totalSuccess,
+      totalErrors,
+    })
+  } catch (error) {
+    console.error('❌ Error in batchAnalyzePlaceWikipedias:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     res.status(500).json({ error: `Internal server error: ${errorMessage}` })
   }
