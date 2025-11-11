@@ -20,7 +20,6 @@
     "fetch-french-regional-parks": "ts-node src/scripts/fetch-french-regional-parks.ts",
     "fetch-french-national-parks": "ts-node src/scripts/fetch-french-national-parks.ts",
     "remove-places": "ts-node src/scripts/remove-places.ts",
-    "enhance-places": "ts-node src/scripts/enhance-places.ts",
     "recalculate-scores": "ts-node src/scripts/recalculate-scores.ts",
     "migrate-place-types": "ts-node src/scripts/migrate-place-types.ts",
     "analyze-place-website": "ts-node src/scripts/analyze-place-website.ts",

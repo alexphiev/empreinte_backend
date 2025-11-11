@@ -14,9 +14,8 @@
  */
 
 import 'dotenv/config'
-import { supabase } from '../services/supabase.service'
+import { Place, getPlacesForWikipediaAnalysis } from '../db/places'
 import { analyzePlaceWikipediaCore } from '../services/wikipedia-analysis.service'
-import { Place } from '../db/places'
 
 interface ProcessStats {
   processedCount: number
@@ -54,21 +53,7 @@ class BatchWikipediaAnalyzer {
     }
 
     // Get places that haven't been analyzed (or all if bypassing)
-    let query = supabase.from('places').select('*')
-
-    if (!this.bypassCache) {
-      // Only get places that haven't been analyzed yet
-      query = query.is('wikipedia_analyzed_at', null)
-    }
-
-    // Order by score descending to prioritize higher-scored places
-    query = query.order('score', { ascending: false })
-
-    if (limit !== undefined) {
-      query = query.limit(limit)
-    }
-
-    const { data: placesToProcess, error: queryError } = await query
+    const { data: placesToProcess, error: queryError } = await getPlacesForWikipediaAnalysis(this.bypassCache, limit)
 
     if (queryError) {
       console.error('❌ Error fetching places:', queryError)
@@ -91,12 +76,14 @@ class BatchWikipediaAnalyzer {
         const { result, error } = await analyzePlaceWikipediaCore(place.id, { bypassCache: this.bypassCache })
         this.stats.processedCount++
 
-        if (error) {
+        if (error || !result) {
           this.stats.errorCount++
           console.error(`❌ Error: ${error}`)
         } else {
           this.stats.successCount++
-          console.log(`✅ Success: ${result.description.length} chars, ${result.mentionedPlaces.length} places mentioned`)
+          const descLength = result.description?.length || 0
+          const score = result.wikipediaData?.score || 0
+          console.log(`✅ Success: ${descLength} chars, score: ${score}`)
         }
 
         // Print progress every 10 places
@@ -151,5 +138,3 @@ async function main() {
 
 // Run the script
 main()
-
-

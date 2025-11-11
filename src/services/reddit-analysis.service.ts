@@ -1,6 +1,7 @@
 import { getPlaceById, updatePlace } from '../db/places'
 import { summarizeRedditContent } from './ai.service'
 import { redditService } from './reddit.service'
+import { recalculateAndUpdateScores } from './score.service'
 
 export interface RedditAnalysisResult {
   placeId: string
@@ -202,6 +203,10 @@ export async function analyzePlaceRedditCore(
     } else {
       console.log(`✅ Results saved to database successfully`)
       console.log(`   Updated place ID: ${place.id}`)
+
+      // Recalculate scores after updating place data
+      console.log(`\n--- Step 2.5: Recalculating Scores ---`)
+      await recalculateAndUpdateScores(place.id)
     }
 
     return {

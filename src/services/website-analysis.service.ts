@@ -1,9 +1,10 @@
-import { getPlaceById, updatePlace, type Place } from '../db/places'
-import { getOrCreateSource } from '../db/sources'
 import { batchGetOrCreateGeneratedPlaces } from '../db/generated-places'
-import { summarizeScrapedContent, extractMentionedPlaces } from './ai.service'
-import { deepWebsiteScraperService } from './deep-website-scraper.service'
+import { getPlaceById, updatePlace } from '../db/places'
+import { getOrCreateSource } from '../db/sources'
 import { cleanText } from '../utils/text-cleaner'
+import { extractMentionedPlaces, summarizeScrapedContent } from './ai.service'
+import { deepWebsiteScraperService } from './deep-website-scraper.service'
+import { recalculateAndUpdateScores } from './score.service'
 
 export interface WebsiteAnalysisResult {
   placeId: string
@@ -161,6 +162,10 @@ export async function analyzePlaceWebsiteCore(
     } else {
       console.log(`✅ Results saved to database successfully`)
       console.log(`   Updated place ID: ${place.id}`)
+
+      // Recalculate scores after updating place data
+      console.log(`\n--- Step 3.5: Recalculating Scores ---`)
+      await recalculateAndUpdateScores(place.id)
     }
 
     // Step 4: Store source and generated places
@@ -216,4 +221,3 @@ export async function analyzePlaceWebsiteCore(
     }
   }
 }
-

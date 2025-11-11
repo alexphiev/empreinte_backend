@@ -361,6 +361,56 @@ export type Database = {
         }
         Relationships: []
       }
+      wikipedia: {
+        Row: {
+          categories: string[] | null
+          created_at: string | null
+          first_paragraph: string | null
+          id: string
+          infobox_data: Json | null
+          language_versions: string[] | null
+          page_title: string
+          page_views: number | null
+          place_id: string
+          score: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          categories?: string[] | null
+          created_at?: string | null
+          first_paragraph?: string | null
+          id?: string
+          infobox_data?: Json | null
+          language_versions?: string[] | null
+          page_title: string
+          page_views?: number | null
+          place_id: string
+          score?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          categories?: string[] | null
+          created_at?: string | null
+          first_paragraph?: string | null
+          id?: string
+          infobox_data?: Json | null
+          language_versions?: string[] | null
+          page_title?: string
+          page_views?: number | null
+          place_id?: string
+          score?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wikipedia_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: true
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

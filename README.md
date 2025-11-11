@@ -1,6 +1,6 @@
 # Empreinte Nature Places Backend
 
-Backend service for managing and analyzing nature places, including data fetching, enhancement, and AI-powered content extraction.
+Backend service for managing and analyzing nature places, including data fetching and AI-powered content extraction.
 
 ## Development
 
@@ -46,7 +46,7 @@ See [API Documentation](#api-documentation) section below for details on using S
 
 ## Scripts Overview
 
-This project includes scripts for data fetching, enhancement, analysis, and maintenance. All scripts can be run using `pnpm run <script-name>`.
+This project includes scripts for data fetching, analysis, and maintenance. All scripts can be run using `pnpm run <script-name>`.
 
 ## Data Fetching Scripts
 
@@ -333,43 +333,9 @@ pnpm fetch-ratings --limit 10
 
 **Note**: Ratings are refreshed every 6 months. Places with ratings fetched less than 6 months ago will be skipped.
 
-## Data Enhancement System
+## Score Recalculation
 
-The application includes a comprehensive system for enhancing place data with information from multiple sources:
-
-### Enhancement Commands
-
-```bash
-# Check how many places need enhancement
-pnpm enhance-places list
-
-# Enhance a specific place by ID
-pnpm enhance-places <place-id>
-
-# Enhance all places that need enhancement
-pnpm enhance-places all
-
-# Enhance only the first N places (useful for testing)
-pnpm enhance-places all 10
-
-# Force re-enhancement of places (override existing enhancements)
-pnpm enhance-places all force
-pnpm enhance-places <place-id> force
-```
-
-### What the Enhancement System Does
-
-The system enriches place records with:
-
-- **Website Information**: Scrapes and summarizes content from place websites (+2 points)
-- **Reddit Discussions**: Finds and summarizes relevant Reddit discussions about places (+2 points)
-- **Wikipedia Content**: Extracts and summarizes Wikipedia articles about places (+4 points)
-
-All content is filtered through AI to ensure only relevant information is added.
-
-### Score Recalculation
-
-Recalculate enhancement and total scores for all places without re-enhancing data:
+Recalculate enhancement and total scores for all places:
 
 ```bash
 pnpm recalculate-scores
@@ -378,7 +344,7 @@ pnpm recalculate-scores
 **Use cases**:
 
 - Fix score inconsistencies after database migrations
-- Update scores after enhancement logic changes
+- Update scores after scoring logic changes
 - Verify score accuracy
 
 **What it does**:
@@ -505,7 +471,6 @@ SCORE_SOURCE_HAS_WEBSITE=2       # Bonus for places with website
 | `fetch-french-regional-parks` | Import French regional parks     | `pnpm fetch-french-regional-parks [--force] [--limit=N]` |
 | `fetch-french-national-parks` | Import French national parks     | `pnpm fetch-french-national-parks [--force] [--limit=N]` |
 | `remove-places`               | Remove places by source          | `pnpm remove-places <source>`                            |
-| `enhance-places`              | Enhance place data with AI       | `pnpm enhance-places [list\|all\|<id>] [force]`          |
 | `analyze-place-website`       | Analyze a place's website        | `pnpm analyze-place-website <place-id>`                  |
 | `analyze-place-wikipedia`     | Analyze a place's Wikipedia      | `pnpm analyze-place-wikipedia <place-id>`                |
 | `analyze-urls`                | Analyze URLs and extract places  | `pnpm analyze-urls <url1> [url2] ...`                    |

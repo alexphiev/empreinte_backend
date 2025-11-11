@@ -19,8 +19,16 @@ export interface WikipediaAnalysisResponse {
   placeId: string
   placeName: string
   wikipediaReference: string | null
-  description: string
-  mentionedPlaces: string[]
+  description: string | null
+  wikipediaData: {
+    page_title: string
+    categories: string[]
+    first_paragraph: string | null
+    infobox_data: Record<string, any> | null
+    page_views: number | null
+    language_versions: string[]
+    score: number
+  } | null
   error?: string
 }
 
@@ -40,7 +48,6 @@ export interface BatchWebsiteAnalysisResponse {
 }
 
 export interface BatchWikipediaAnalysisResponse {
-  results: Array<WikipediaAnalysisResponse & { error?: string }>
   totalProcessed: number
   totalSuccess: number
   totalErrors: number
@@ -139,16 +146,37 @@ export async function analyzePlaceWikipedia(
       return
     }
 
+    if (!result) {
+      res.status(500).json({ error: 'No result from Wikipedia analysis' })
+      return
+    }
+
     console.log(`\n✅ Wikipedia analysis complete!`)
-    console.log(`📝 Description: ${result.description.substring(0, 100)}...`)
-    console.log(`📍 Mentioned places: ${result.mentionedPlaces.length}`)
+    if (result.description) {
+      console.log(`📝 Description: ${result.description.substring(0, 100)}...`)
+    }
+    if (result.wikipediaData) {
+      console.log(`📊 Page views: ${result.wikipediaData.page_views || 'N/A'}`)
+      console.log(`🌐 Language versions: ${result.wikipediaData.language_versions.length}`)
+      console.log(`⭐ Score: ${result.wikipediaData.score}`)
+    }
 
     const response: WikipediaAnalysisResponse = {
       placeId: result.placeId,
       placeName: result.placeName,
       wikipediaReference: result.wikipediaReference,
       description: result.description,
-      mentionedPlaces: result.mentionedPlaces,
+      wikipediaData: result.wikipediaData
+        ? {
+            page_title: result.wikipediaData.page_title,
+            categories: result.wikipediaData.categories,
+            first_paragraph: result.wikipediaData.first_paragraph,
+            infobox_data: result.wikipediaData.infobox_data,
+            page_views: result.wikipediaData.page_views,
+            language_versions: result.wikipediaData.language_versions,
+            score: result.wikipediaData.score,
+          }
+        : null,
     }
 
     res.status(200).json(response)
@@ -392,7 +420,6 @@ export async function batchAnalyzePlaceWikipedias(
 
     if (!placesToProcess || placesToProcess.length === 0) {
       res.status(200).json({
-        results: [],
         totalProcessed: 0,
         totalSuccess: 0,
         totalErrors: 0,
@@ -402,7 +429,8 @@ export async function batchAnalyzePlaceWikipedias(
 
     console.log(`📋 Found ${placesToProcess.length} places to process`)
 
-    const results: BatchWikipediaAnalysisResponse['results'] = []
+    let totalSuccess = 0
+    let totalErrors = 0
 
     // Process places one by one
     for (let i = 0; i < placesToProcess.length; i++) {
@@ -412,34 +440,19 @@ export async function batchAnalyzePlaceWikipedias(
       try {
         const { result, error } = await analyzePlaceWikipediaCore(place.id, { bypassCache })
 
-        if (error) {
-          results.push({
-            placeId: place.id,
-            placeName: place.name || 'Unknown',
-            wikipediaReference: null,
-            description: '',
-            mentionedPlaces: [],
-            error,
-          })
+        if (error || !result) {
+          totalErrors++
+          console.error(`❌ Error: ${error || 'No result from Wikipedia analysis'}`)
         } else {
-          results.push({
-            placeId: result.placeId,
-            placeName: result.placeName,
-            wikipediaReference: result.wikipediaReference,
-            description: result.description,
-            mentionedPlaces: result.mentionedPlaces,
-          })
+          totalSuccess++
+          const descLength = result.description?.length || 0
+          const score = result.wikipediaData?.score || 0
+          console.log(`✅ Success: ${descLength} chars, score: ${score}`)
         }
       } catch (error) {
+        totalErrors++
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        results.push({
-          placeId: place.id,
-          placeName: place.name || 'Unknown',
-          wikipediaReference: null,
-          description: '',
-          mentionedPlaces: [],
-          error: errorMessage,
-        })
+        console.error(`❌ Fatal error processing place ${place.name}: ${errorMessage}`)
       }
 
       // Add small delay between requests (except for the last one)
@@ -448,17 +461,15 @@ export async function batchAnalyzePlaceWikipedias(
       }
     }
 
-    const totalSuccess = results.filter((r) => !r.error).length
-    const totalErrors = results.filter((r) => r.error).length
+    const totalProcessed = totalSuccess + totalErrors
 
     console.log(`\n✅ Batch Wikipedia analysis complete!`)
-    console.log(`📊 Processed: ${results.length}`)
+    console.log(`📊 Processed: ${totalProcessed}`)
     console.log(`✅ Success: ${totalSuccess}`)
     console.log(`❌ Errors: ${totalErrors}`)
 
     res.status(200).json({
-      results,
-      totalProcessed: results.length,
+      totalProcessed,
       totalSuccess,
       totalErrors,
     })

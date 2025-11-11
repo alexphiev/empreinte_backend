@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { FRANCE_BBOX, getDepartmentByCode } from '../data/department.data'
 import { overtureService } from '../services/overture.service'
 import { supabase } from '../services/supabase.service'
+import { formatPlaceObject } from '../utils/common'
 
 interface ProcessStats {
   processedCount: number
@@ -25,9 +26,9 @@ class OvertureNaturePlacesFetcher {
   }
 
   private preparePlace(place: any, region: string): any {
-    return {
+    return formatPlaceObject({
       source: 'OVERTURE',
-      source_id: `overture:${place.overture_id}`,
+      sourceId: `overture:${place.overture_id}`,
       name: place.name,
       type: place.type,
       location: `POINT(${place.longitude} ${place.latitude})`,
@@ -36,7 +37,7 @@ class OvertureNaturePlacesFetcher {
       country: 'France',
       description: place.metadata?.description || null,
       metadata: place,
-    }
+    })
   }
 
   private async upsertPlacesBatch(places: any[]): Promise<void> {
