@@ -338,7 +338,21 @@ pnpm fetch-ratings --limit 10
 Recalculate enhancement and total scores for all places:
 
 ```bash
+# Recalculate all places
 pnpm recalculate-scores
+
+# Only recalculate places updated before a specific date
+pnpm recalculate-scores DD/MM/YYYY
+```
+
+**Examples**:
+
+```bash
+# Recalculate all places
+pnpm recalculate-scores
+
+# Only recalculate places last updated before January 1, 2025
+pnpm recalculate-scores 01/01/2025
 ```
 
 **Use cases**:
@@ -346,13 +360,21 @@ pnpm recalculate-scores
 - Fix score inconsistencies after database migrations
 - Update scores after scoring logic changes
 - Verify score accuracy
+- Selectively recalculate only outdated scores
 
 **What it does**:
 
-- Iterates through all places in the database
-- Recalculates enhancement scores based on existing enhanced fields
-- Updates `enhancement_score` and total `score` fields
-- Ensures scores accurately reflect current enhancement state
+- Iterates through all places in batches of 1000 (handles large databases)
+- Optionally filters by `last_score_updated_at` date
+- Recalculates scores based on current enhancement data:
+  - Source score (base + park type + verification status)
+  - Enhancement score (website + Reddit + Wikipedia + photos + Google ratings)
+- Updates `score`, `source_score`, `enhancement_score`, and `last_score_updated_at` fields
+- Shows progress and summary statistics
+
+**Parameters**:
+
+- `DD/MM/YYYY`: Optional date filter. Only recalculates places with `last_score_updated_at` before this date
 
 ## Maintenance Scripts
 
@@ -444,22 +466,6 @@ REDDIT_CLIENT_SECRET=your_reddit_client_secret
 
 # Google Places API (for photos and ratings)
 GOOGLE_PLACES_API_KEY=your_google_places_api_key
-
-# Score Configuration (all optional, defaults shown)
-# Enhancement scores (points added when content is successfully analyzed)
-SCORE_ENHANCEMENT_WEBSITE=2      # Points for website analysis
-SCORE_ENHANCEMENT_REDDIT=2       # Points for Reddit analysis
-SCORE_ENHANCEMENT_WIKIPEDIA=4    # Points for Wikipedia analysis
-
-# Score bumps (points added for other operations)
-SCORE_BUMP_PHOTOS_FETCHED=2      # Points when photos are fetched for first time
-SCORE_BUMP_RATINGS_FETCHED=2     # Points when ratings are fetched for first time
-SCORE_BUMP_GENERATED_PLACE_VERIFIED=2      # Points when a generated place is verified in OSM
-
-# Source scores (base scores for places from different sources)
-SCORE_SOURCE_BASE=1              # Base score for all places
-SCORE_SOURCE_HAS_WIKIPEDIA=2     # Bonus for places with Wikipedia reference
-SCORE_SOURCE_HAS_WEBSITE=2       # Bonus for places with website
 ```
 
 ## Scripts Summary
@@ -477,7 +483,7 @@ SCORE_SOURCE_HAS_WEBSITE=2       # Bonus for places with website
 | `verify-places`               | Verify generated places in OSM   | `pnpm verify-places <sourceId> [scoreBump]`              |
 | `fetch-photos`                | Fetch photos for places          | `pnpm fetch-photos [--minScore=N] [--limit=N]`           |
 | `fetch-ratings`               | Fetch ratings from Google Places | `pnpm fetch-ratings [--minScore=N] [--limit=N]`          |
-| `recalculate-scores`          | Recalculate place scores         | `pnpm recalculate-scores`                                |
+| `recalculate-scores`          | Recalculate place scores         | `pnpm recalculate-scores DD/MM/YYYY`                     |
 | `migrate-place-types`         | Migrate place types              | `pnpm migrate-place-types`                               |
 | `generate-types`              | Generate DB types                | `pnpm generate-types`                                    |
 | `clear-osm-cache`             | Clear OSM cache                  | `pnpm clear-osm-cache`                                   |

@@ -6,8 +6,8 @@ export type Wikipedia = Tables<'wikipedia'>
 export type WikipediaInsert = TablesInsert<'wikipedia'>
 export type WikipediaUpdate = TablesUpdate<'wikipedia'>
 
-export async function getWikipediaByPlaceId(placeId: string): Promise<PostgrestSingleResponse<Wikipedia>> {
-  return supabase.from('wikipedia').select('*').eq('place_id', placeId).single()
+export async function getWikipediaByPlaceId(placeId: string): Promise<PostgrestSingleResponse<Wikipedia | null>> {
+  return supabase.from('wikipedia').select('*').eq('place_id', placeId).maybeSingle()
 }
 
 export async function upsertWikipedia(data: WikipediaInsert): Promise<PostgrestSingleResponse<Wikipedia>> {

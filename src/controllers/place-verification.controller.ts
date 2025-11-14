@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { VerificationResult, VerificationStatus, verifyPlacesCore } from '../services/place-verification.service'
-import { scoreConfig } from '../services/score-config.service'
+import { SCORE_CONFIG } from '../services/score-config.service'
 
 export interface PlaceVerificationResponse {
   results: VerificationResult[]
@@ -15,7 +15,7 @@ export async function verifyPlaces(
   res: Response<PlaceVerificationResponse | { error: string }>,
 ): Promise<void> {
   try {
-    const { generatedPlaceId, scoreBump, limit } = req.body
+    const { generatedPlaceId, limit } = req.body
 
     console.log(`\n🔍 Starting place verification`)
     if (generatedPlaceId) {
@@ -23,16 +23,12 @@ export async function verifyPlaces(
     } else {
       console.log(`   Verifying all generated places without status (sorted by oldest created_at)`)
     }
-    if (scoreBump) {
-      console.log(`   Score bump: ${scoreBump}`)
-    }
     if (limit) {
       console.log(`   Limit: ${limit}`)
     }
 
     const { results, error } = await verifyPlacesCore({
       generatedPlaceId,
-      scoreBump: scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump(),
       limit: limit ? parseInt(String(limit), 10) : undefined,
     })
 

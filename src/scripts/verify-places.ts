@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { scoreConfig } from '../services/score-config.service'
 import { VerificationStatus, verifyPlacesCore } from '../services/place-verification.service'
+import { SCORE_CONFIG } from '../services/score-config.service'
 
 async function main() {
   const arg1 = process.argv[2]
@@ -38,7 +38,9 @@ async function main() {
         console.error('  pnpm run verify-places 10                 # Verify 10 oldest places')
         console.error('  pnpm run verify-places 10 3               # Verify 10 oldest places with scoreBump 3')
         console.error('  pnpm run verify-places 123e4567-e89b-12d3-a456-426614174000  # Verify single place')
-        console.error('  pnpm run verify-places 123e4567-e89b-12d3-a456-426614174000 3  # Verify single place with scoreBump 3')
+        console.error(
+          '  pnpm run verify-places 123e4567-e89b-12d3-a456-426614174000 3  # Verify single place with scoreBump 3',
+        )
         process.exit(1)
       }
       if (arg2) {
@@ -56,7 +58,7 @@ async function main() {
   } else {
     console.log(`Verifying all generated places without status (sorted by oldest created_at)`)
   }
-  const effectiveScoreBump = scoreBump ?? scoreConfig.getGeneratedPlaceVerifiedBump()
+  const effectiveScoreBump = SCORE_CONFIG.isGeneratedPlaceVerified
   console.log(`Score bump: ${effectiveScoreBump}${scoreBump === undefined ? ' (default from config)' : ' (custom)'}`)
   if (limit) {
     console.log(`Limit: ${limit}`)
@@ -66,7 +68,6 @@ async function main() {
   try {
     const { results, error } = await verifyPlacesCore({
       generatedPlaceId,
-      scoreBump,
       limit,
     })
 

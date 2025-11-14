@@ -4,6 +4,11 @@ import { Tables, TablesInsert } from '../types/database'
 import { PlacePhoto } from './place-photos'
 
 export type Place = Tables<'places'>
+export type PlaceWithScoreData = Place & {
+  generated_places?: { id: string }[]
+  wikipedia?: { score: number }
+  place_photos?: { id: string }[]
+}
 
 export interface PlaceWithPhotos extends Place {
   place_photos?: PlacePhoto[]
@@ -13,8 +18,42 @@ export async function getPlaceById(id: string): Promise<PostgrestSingleResponse<
   return supabase.from('places').select('*').eq('id', id).single()
 }
 
-export async function getPlaces(): Promise<PostgrestResponse<Place>> {
-  return supabase.from('places').select('*')
+export async function getPlacesForScoreCalculation(
+  limit?: number,
+  offset?: number,
+  maxLastScoreUpdatedAt?: Date,
+): Promise<PostgrestResponse<PlaceWithScoreData>> {
+  let query = supabase
+    .from('places')
+    .select(
+      '*, generated_places!generated_places_place_id_fkey(id), wikipedia!wikipedia_place_id_fkey(score), place_photos!place_photos_place_id_fkey(id)',
+    )
+
+  if (maxLastScoreUpdatedAt) {
+    query = query.or(`last_score_updated_at.is.null,last_score_updated_at.lt.${maxLastScoreUpdatedAt.toISOString()}`)
+  }
+
+  if (limit !== undefined) {
+    query = query.limit(limit)
+  }
+
+  if (offset !== undefined) {
+    query = query.range(offset, offset + (limit || 1000) - 1)
+  }
+
+  return query as any
+}
+
+export async function getPlacesCount(maxLastScoreUpdatedAt?: Date): Promise<{ count: number | null; error: any }> {
+  let query = supabase.from('places').select('id', { count: 'estimated', head: true })
+
+  if (maxLastScoreUpdatedAt) {
+    query = query.or(`last_score_updated_at.is.null,last_score_updated_at.lt.${maxLastScoreUpdatedAt.toISOString()}`)
+  }
+
+  const { count, error } = await query
+
+  return { count, error }
 }
 
 /**
@@ -81,14 +120,15 @@ export async function updatePlaceScores(
   sourceScore?: number,
 ): Promise<PostgrestSingleResponse<Place>> {
   const updates: any = {
-    enhancement_score: enhancementScore,
-    source_score: sourceScore,
-    score: totalScore,
+    enhancement_score: Math.round(enhancementScore),
+    source_score: sourceScore !== undefined ? Math.round(sourceScore) : undefined,
+    score: Math.round(totalScore),
+    last_score_updated_at: new Date().toISOString(),
   }
 
   // Include source_score if provided
   if (sourceScore !== undefined) {
-    updates.source_score = sourceScore
+    updates.source_score = Math.round(sourceScore)
   }
 
   return supabase.from('places').update(updates).eq('id', placeId).single()
@@ -102,6 +142,34 @@ export async function updatePlaceScoresFromCalculation(
   scores: { sourceScore: number; enhancementScore: number; totalScore: number },
 ): Promise<PostgrestSingleResponse<Place>> {
   return updatePlaceScores(placeId, scores.enhancementScore, scores.totalScore, scores.sourceScore)
+}
+
+/**
+ * Batch update place scores for multiple places
+ * Uses Supabase upsert for efficient bulk updates
+ * Returns only error for maximum performance (no data returned from DB)
+ */
+export async function batchUpdatePlaceScores(
+  updates: Array<{
+    id: string
+    sourceScore: number
+    enhancementScore: number
+    totalScore: number
+  }>,
+): Promise<{ error: any }> {
+  const timestamp = new Date().toISOString()
+
+  const data = updates.map((update) => ({
+    id: update.id,
+    source_score: Math.round(update.sourceScore),
+    enhancement_score: Math.round(update.enhancementScore),
+    score: Math.round(update.totalScore),
+    last_score_updated_at: timestamp,
+  }))
+
+  const { error } = await supabase.from('places').upsert(data, { onConflict: 'id' })
+
+  return { error }
 }
 
 /**

@@ -1,7 +1,7 @@
 import { calculateGoogleRatingScore } from '@/utils/score.utils'
 import { hasGeneratedPlace } from '../db/generated-places'
 import { hasPlacePhotos } from '../db/place-photos'
-import { getPlaceById, updatePlaceScoresFromCalculation } from '../db/places'
+import { getPlaceById, PlaceWithScoreData, updatePlaceScoresFromCalculation } from '../db/places'
 import { getWikipediaByPlaceId } from '../db/wikipedia'
 import { Tables } from '../types/database'
 import { SCORE_CONFIG } from './score-config.service'
@@ -27,10 +27,9 @@ export function isValidEnhancement(field: string | null): boolean {
 /**
  * Centralized score calculation function
  * Calculates all scores for a place based on its current state
+ * Accepts pre-loaded data to avoid extra DB queries when available
  */
-export async function calculateScore(place: Place): Promise<ScoreCalculation> {
-  // Calculate source score
-  // Special handling for national and regional parks
+export async function calculateScore(place: Place | PlaceWithScoreData): Promise<ScoreCalculation> {
   let sourceScore = SCORE_CONFIG.base
 
   if (place.type === 'national_park') {
@@ -39,55 +38,44 @@ export async function calculateScore(place: Place): Promise<ScoreCalculation> {
     sourceScore = SCORE_CONFIG.regionalPark
   }
 
-  // Add bonus if place has a related generated_place (is verified)
-  try {
-    const isVerified = await hasGeneratedPlace(place.id)
-    if (isVerified) {
-      sourceScore += SCORE_CONFIG.isGeneratedPlaceVerified
-    }
-  } catch (error) {
-    // Skip silently if check fails
+  const placeWithData = place as PlaceWithScoreData
+  const isVerified = placeWithData.generated_places
+    ? placeWithData.generated_places.length > 0
+    : await hasGeneratedPlace(place.id)
+
+  if (isVerified) {
+    sourceScore += SCORE_CONFIG.isGeneratedPlaceVerified
   }
 
-  // Calculate enhancement score
   let enhancementScore = 0
 
-  // Add bonus for website
   if (place.website) {
     enhancementScore += SCORE_CONFIG.hasWebsite
   }
 
-  // Reddit enhancement
   if (isValidEnhancement(place.reddit_generated)) {
     enhancementScore += SCORE_CONFIG.hasRedditArticles
   }
 
-  // Wikipedia enhancement - use score from wikipedia table
-  // Note: Wikipedia score already includes hasPage + pageViews + languageVersions
-  try {
-    const { data } = await getWikipediaByPlaceId(place.id)
-    if (data) {
-      enhancementScore += SCORE_CONFIG.wikipedia.hasPage
-
-      if (data.score) {
-        enhancementScore += Number(data.score)
-      }
+  if (placeWithData.wikipedia !== undefined) {
+    if (placeWithData.wikipedia?.score) {
+      enhancementScore += Number(placeWithData.wikipedia.score)
     }
-  } catch (error) {
-    // Skip silently
+  } else {
+    const { data: wikipediaData, error: wikipediaError } = await getWikipediaByPlaceId(place.id)
+    if (wikipediaError) {
+      console.error(`❌ Error fetching Wikipedia data for place ${place.id}:`, wikipediaError)
+    } else if (wikipediaData?.score) {
+      enhancementScore += Number(wikipediaData.score)
+    }
   }
 
-  // Photos bonus - check for actual photos in database
-  try {
-    const hasPhotos = await hasPlacePhotos(place.id)
-    if (hasPhotos) {
-      enhancementScore += SCORE_CONFIG.hasPhotos
-    }
-  } catch (error) {
-    // Skip silently if photos check fails
+  const hasPhotos = placeWithData.place_photos ? placeWithData.place_photos.length > 0 : await hasPlacePhotos(place.id)
+
+  if (hasPhotos) {
+    enhancementScore += SCORE_CONFIG.hasPhotos
   }
 
-  // Google ratings bonus - use combined rating and count scoring
   if (place.google_rating && place.google_rating_count) {
     enhancementScore += calculateGoogleRatingScore(place.google_rating, place.google_rating_count)
   }
