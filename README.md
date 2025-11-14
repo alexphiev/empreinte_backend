@@ -1,6 +1,6 @@
 # Empreinte Nature Places Backend
 
-Backend service for managing and analyzing nature places, including data fetching, enhancement, and AI-powered content extraction.
+Backend service for managing and analyzing nature places, including data fetching and AI-powered content extraction.
 
 ## Development
 
@@ -46,7 +46,7 @@ See [API Documentation](#api-documentation) section below for details on using S
 
 ## Scripts Overview
 
-This project includes scripts for data fetching, enhancement, analysis, and maintenance. All scripts can be run using `pnpm run <script-name>`.
+This project includes scripts for data fetching, analysis, and maintenance. All scripts can be run using `pnpm run <script-name>`.
 
 ## Data Fetching Scripts
 
@@ -333,60 +333,48 @@ pnpm fetch-ratings --limit 10
 
 **Note**: Ratings are refreshed every 6 months. Places with ratings fetched less than 6 months ago will be skipped.
 
-## Data Enhancement System
+## Score Recalculation
 
-The application includes a comprehensive system for enhancing place data with information from multiple sources:
-
-### Enhancement Commands
+Recalculate enhancement and total scores for all places:
 
 ```bash
-# Check how many places need enhancement
-pnpm enhance-places list
+# Recalculate all places
+pnpm recalculate-scores
 
-# Enhance a specific place by ID
-pnpm enhance-places <place-id>
-
-# Enhance all places that need enhancement
-pnpm enhance-places all
-
-# Enhance only the first N places (useful for testing)
-pnpm enhance-places all 10
-
-# Force re-enhancement of places (override existing enhancements)
-pnpm enhance-places all force
-pnpm enhance-places <place-id> force
+# Only recalculate places updated before a specific date
+pnpm recalculate-scores DD/MM/YYYY
 ```
 
-### What the Enhancement System Does
-
-The system enriches place records with:
-
-- **Website Information**: Scrapes and summarizes content from place websites (+2 points)
-- **Reddit Discussions**: Finds and summarizes relevant Reddit discussions about places (+2 points)
-- **Wikipedia Content**: Extracts and summarizes Wikipedia articles about places (+4 points)
-
-All content is filtered through AI to ensure only relevant information is added.
-
-### Score Recalculation
-
-Recalculate enhancement and total scores for all places without re-enhancing data:
+**Examples**:
 
 ```bash
+# Recalculate all places
 pnpm recalculate-scores
+
+# Only recalculate places last updated before January 1, 2025
+pnpm recalculate-scores 01/01/2025
 ```
 
 **Use cases**:
 
 - Fix score inconsistencies after database migrations
-- Update scores after enhancement logic changes
+- Update scores after scoring logic changes
 - Verify score accuracy
+- Selectively recalculate only outdated scores
 
 **What it does**:
 
-- Iterates through all places in the database
-- Recalculates enhancement scores based on existing enhanced fields
-- Updates `enhancement_score` and total `score` fields
-- Ensures scores accurately reflect current enhancement state
+- Iterates through all places in batches of 1000 (handles large databases)
+- Optionally filters by `score_updated_at` date
+- Recalculates scores based on current enhancement data:
+  - Source score (base + park type + verification status)
+  - Enhancement score (website + Reddit + Wikipedia + photos + Google ratings)
+- Updates `score`, `source_score`, `enhancement_score`, and `score_updated_at` fields
+- Shows progress and summary statistics
+
+**Parameters**:
+
+- `DD/MM/YYYY`: Optional date filter. Only recalculates places with `score_updated_at` before this date
 
 ## Maintenance Scripts
 
@@ -489,14 +477,13 @@ GOOGLE_PLACES_API_KEY=your_google_places_api_key
 | `fetch-french-regional-parks` | Import French regional parks     | `pnpm fetch-french-regional-parks [--force] [--limit=N]` |
 | `fetch-french-national-parks` | Import French national parks     | `pnpm fetch-french-national-parks [--force] [--limit=N]` |
 | `remove-places`               | Remove places by source          | `pnpm remove-places <source>`                            |
-| `enhance-places`              | Enhance place data with AI       | `pnpm enhance-places [list\|all\|<id>] [force]`          |
 | `analyze-place-website`       | Analyze a place's website        | `pnpm analyze-place-website <place-id>`                  |
 | `analyze-place-wikipedia`     | Analyze a place's Wikipedia      | `pnpm analyze-place-wikipedia <place-id>`                |
 | `analyze-urls`                | Analyze URLs and extract places  | `pnpm analyze-urls <url1> [url2] ...`                    |
 | `verify-places`               | Verify generated places in OSM   | `pnpm verify-places <sourceId> [scoreBump]`              |
 | `fetch-photos`                | Fetch photos for places          | `pnpm fetch-photos [--minScore=N] [--limit=N]`           |
 | `fetch-ratings`               | Fetch ratings from Google Places | `pnpm fetch-ratings [--minScore=N] [--limit=N]`          |
-| `recalculate-scores`          | Recalculate place scores         | `pnpm recalculate-scores`                                |
+| `recalculate-scores`          | Recalculate place scores         | `pnpm recalculate-scores DD/MM/YYYY`                     |
 | `migrate-place-types`         | Migrate place types              | `pnpm migrate-place-types`                               |
 | `generate-types`              | Generate DB types                | `pnpm generate-types`                                    |
 | `clear-osm-cache`             | Clear OSM cache                  | `pnpm clear-osm-cache`                                   |

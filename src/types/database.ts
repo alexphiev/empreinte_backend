@@ -116,17 +116,17 @@ export type Database = {
           google_rating_fetched_at: string | null
           id: string
           last_enhanced_at: string | null
-          last_website_analyzed_at: string | null
-          last_wikipedia_analyzed_at: string | null
           location: unknown
           metadata: Json | null
           name: string | null
           osm_id: string | null
           photos_fetched_at: string | null
+          reddit_analyzed_at: string | null
           reddit_data: Json | null
           reddit_generated: string | null
           region: string | null
           score: number
+          score_updated_at: string | null
           short_name: string | null
           source: string | null
           source_id: string | null
@@ -134,9 +134,11 @@ export type Database = {
           type: string | null
           updated_at: string | null
           website: string | null
+          website_analyzed_at: string | null
           website_generated: string | null
           website_places_generated: string[] | null
           website_raw: string | null
+          wikipedia_analyzed_at: string | null
           wikipedia_generated: string | null
           wikipedia_places_generated: string[] | null
           wikipedia_query: string | null
@@ -154,17 +156,17 @@ export type Database = {
           google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
-          last_website_analyzed_at?: string | null
-          last_wikipedia_analyzed_at?: string | null
           location?: unknown
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
           photos_fetched_at?: string | null
+          reddit_analyzed_at?: string | null
           reddit_data?: Json | null
           reddit_generated?: string | null
           region?: string | null
           score: number
+          score_updated_at?: string | null
           short_name?: string | null
           source?: string | null
           source_id?: string | null
@@ -172,9 +174,11 @@ export type Database = {
           type?: string | null
           updated_at?: string | null
           website?: string | null
+          website_analyzed_at?: string | null
           website_generated?: string | null
           website_places_generated?: string[] | null
           website_raw?: string | null
+          wikipedia_analyzed_at?: string | null
           wikipedia_generated?: string | null
           wikipedia_places_generated?: string[] | null
           wikipedia_query?: string | null
@@ -192,17 +196,17 @@ export type Database = {
           google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
-          last_website_analyzed_at?: string | null
-          last_wikipedia_analyzed_at?: string | null
           location?: unknown
           metadata?: Json | null
           name?: string | null
           osm_id?: string | null
           photos_fetched_at?: string | null
+          reddit_analyzed_at?: string | null
           reddit_data?: Json | null
           reddit_generated?: string | null
           region?: string | null
           score?: number
+          score_updated_at?: string | null
           short_name?: string | null
           source?: string | null
           source_id?: string | null
@@ -210,9 +214,11 @@ export type Database = {
           type?: string | null
           updated_at?: string | null
           website?: string | null
+          website_analyzed_at?: string | null
           website_generated?: string | null
           website_places_generated?: string[] | null
           website_raw?: string | null
+          wikipedia_analyzed_at?: string | null
           wikipedia_generated?: string | null
           wikipedia_places_generated?: string[] | null
           wikipedia_query?: string | null
@@ -357,6 +363,56 @@ export type Database = {
           url?: string
         }
         Relationships: []
+      }
+      wikipedia: {
+        Row: {
+          categories: string[] | null
+          created_at: string | null
+          first_paragraph: string | null
+          id: string
+          infobox_data: Json | null
+          language_versions: string[] | null
+          page_title: string
+          page_views: number | null
+          place_id: string
+          score: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          categories?: string[] | null
+          created_at?: string | null
+          first_paragraph?: string | null
+          id?: string
+          infobox_data?: Json | null
+          language_versions?: string[] | null
+          page_title: string
+          page_views?: number | null
+          place_id: string
+          score?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          categories?: string[] | null
+          created_at?: string | null
+          first_paragraph?: string | null
+          id?: string
+          infobox_data?: Json | null
+          language_versions?: string[] | null
+          page_title?: string
+          page_views?: number | null
+          place_id?: string
+          score?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wikipedia_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: true
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

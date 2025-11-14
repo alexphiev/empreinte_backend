@@ -1,7 +1,7 @@
-import { getGeneratedPlacesWithoutStatus, updateGeneratedPlace } from '../db/generated-places'
-import { updatePlace } from '../db/places'
+import { getGeneratedPlaceById, getGeneratedPlacesWithoutStatus, updateGeneratedPlace } from '../db/generated-places'
+import { createPlace, getPlaceByOsmId, updatePlace } from '../db/places'
 import { getSourceById } from '../db/sources'
-import { supabase } from '../services/supabase.service'
+import { recalculateAndUpdateScores } from '../services/score.service'
 import { formatPlaceObject } from '../utils/common'
 import { overpassService } from './overpass.service'
 
@@ -23,7 +23,6 @@ export interface VerificationResult {
 
 export interface VerificationOptions {
   generatedPlaceId?: string
-  scoreBump?: number
   limit?: number
 }
 
@@ -36,7 +35,6 @@ async function searchAndCreatePlace(
   description: string | null,
   sourceId: string,
   sourceUrl: string,
-  scoreBump: number = 2,
 ): Promise<{
   status: VerificationStatus
   placeId?: string
@@ -121,11 +119,7 @@ async function searchAndCreatePlace(
     console.log(`✅ Found OSM match: ${match.name} (similarity: ${similarityScore}, OSM ID: ${match.osm_id})`)
 
     // Verify uniqueness by OSM ID before adding/updating
-    const { data: existingPlace, error: findError } = await supabase
-      .from('places')
-      .select('*')
-      .eq('osm_id', String(match.osm_id))
-      .maybeSingle()
+    const { data: existingPlace, error: findError } = await getPlaceByOsmId(String(match.osm_id))
 
     if (findError && findError.code !== 'PGRST116') {
       // PGRST116 is "not found" which is expected, other errors are real issues
@@ -135,22 +129,26 @@ async function searchAndCreatePlace(
 
     if (existingPlace) {
       // Place already exists with this OSM ID - update it instead of creating duplicate
-      const currentScore = existingPlace.source_score || 0
-      const newSourceScore = currentScore + scoreBump
-      const newTotalScore = newSourceScore + (existingPlace.enhancement_score || 0)
+      const wikipediaQuery = match.tags?.wikipedia || match.tags?.['wikipedia:fr'] || existingPlace.wikipedia_query
+      const website = match.tags?.website || existingPlace.website
 
+      // Update place with new data
       await updatePlace(existingPlace.id, {
-        source_score: newSourceScore,
-        score: newTotalScore,
         description: description || existingPlace.description,
         source_id: sourceId,
+        wikipedia_query: wikipediaQuery || existingPlace.wikipedia_query,
+        website: website || existingPlace.website,
       })
 
-      console.log(`🔄 Updated existing place: ${existingPlace.name} (score: ${currentScore} → ${newSourceScore})`)
+      // Note: Scores will be recalculated after generated_place is linked (in verifyPlacesCore)
+
       return { status: VerificationStatus.ADDED, placeId: existingPlace.id, osmId: match.osm_id }
     }
 
     // Create new place
+    const wikipediaQuery = match.tags?.wikipedia || match.tags?.['wikipedia:fr'] || null
+    const website = match.tags?.website || null
+
     const placeData = formatPlaceObject({
       source: sourceUrl,
       sourceId: sourceId,
@@ -160,20 +158,25 @@ async function searchAndCreatePlace(
       location: match.latitude && match.longitude ? `POINT(${match.longitude} ${match.latitude})` : null,
       geometry: match.geometry,
       description: description,
-      source_score: scoreBump,
-      score: scoreBump,
+      website,
+      wikipedia_query: wikipediaQuery,
       country: 'France', // Default, could be improved
     })
 
     // Insert the place
-    const { data: newPlace, error: insertError } = await supabase.from('places').insert(placeData).select().single()
+    const { data: newPlace, error: insertError } = await createPlace(placeData)
 
-    if (insertError) {
+    if (insertError || !newPlace) {
       console.error(`❌ Error creating place:`, insertError)
-      return { status: VerificationStatus.NO_MATCH, error: `Failed to create place: ${insertError.message}` }
+      return {
+        status: VerificationStatus.NO_MATCH,
+        error: `Failed to create place: ${insertError?.message || 'Unknown error'}`,
+      }
     }
 
-    console.log(`✅ Created new place: ${newPlace.name} (score: ${scoreBump})`)
+    console.log(`✅ Created new place: ${newPlace.name}`)
+    // Note: Scores will be recalculated after generated_place is linked (in verifyPlacesCore)
+
     return { status: VerificationStatus.ADDED, placeId: newPlace.id, osmId: match.osm_id }
   } catch (error) {
     console.error(`❌ Error searching/creating place "${placeName}":`, error)
@@ -188,7 +191,7 @@ export async function verifyPlacesCore(
   options: VerificationOptions = {},
 ): Promise<{ results: VerificationResult[]; error: string | null }> {
   try {
-    const { generatedPlaceId, scoreBump = 2, limit } = options
+    const { generatedPlaceId, limit } = options
 
     let generatedPlaces: Array<{
       id: string
@@ -199,11 +202,7 @@ export async function verifyPlacesCore(
 
     if (generatedPlaceId) {
       // Verify a single generated place
-      const { data: place, error } = await supabase
-        .from('generated_places')
-        .select('*')
-        .eq('id', generatedPlaceId)
-        .single()
+      const { data: place, error } = await getGeneratedPlaceById(generatedPlaceId)
 
       if (error || !place) {
         return {
@@ -277,14 +276,18 @@ export async function verifyPlacesCore(
         generatedPlace.description,
         generatedPlace.source_id,
         sourceUrl,
-        scoreBump,
       )
 
-      // Update the generated place status
+      // Update the generated place status and link it to the place
       await updateGeneratedPlace(generatedPlace.id, {
         status: verification.status,
         place_id: verification.placeId || null,
       })
+
+      // Recalculate scores after linking generated_place to place (to include verification bonus)
+      if (verification.placeId && verification.status === VerificationStatus.ADDED) {
+        await recalculateAndUpdateScores(verification.placeId)
+      }
 
       results.push({
         generatedPlaceId: generatedPlace.id,

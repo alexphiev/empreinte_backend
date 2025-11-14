@@ -23,6 +23,7 @@
   },
   "ts-node": {
     "esm": false,
+    "require": ["dotenv/config", "tsconfig-paths/register"],
     "compilerOptions": {
       "module": "commonjs"
     }

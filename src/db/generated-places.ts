@@ -111,11 +111,7 @@ export async function getGeneratedPlacesBySourceId(sourceId: string): Promise<Ge
  * @param limit Optional limit on number of places to return
  */
 export async function getGeneratedPlacesWithoutStatus(limit?: number): Promise<GeneratedPlace[]> {
-  let query = supabase
-    .from('generated_places')
-    .select('*')
-    .is('status', null)
-    .order('created_at', { ascending: true })
+  let query = supabase.from('generated_places').select('*').is('status', null).order('created_at', { ascending: true })
 
   if (limit) {
     query = query.limit(limit)
@@ -144,4 +140,31 @@ export async function updateGeneratedPlace(
     .eq('id', id)
     .select()
     .single()
+}
+
+/**
+ * Get a generated place by ID
+ */
+export async function getGeneratedPlaceById(id: string): Promise<PostgrestSingleResponse<GeneratedPlace>> {
+  return supabase.from('generated_places').select('*').eq('id', id).single()
+}
+
+/**
+ * Check if a place has a related generated place (is verified)
+ */
+export async function hasGeneratedPlace(placeId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('generated_places')
+    .select('id')
+    .eq('place_id', placeId)
+    .limit(1)
+    .maybeSingle()
+
+  if (error && error.code !== 'PGRST116') {
+    // PGRST116 is "not found" which is expected, other errors are real issues
+    console.error(`❌ Error checking for generated place:`, error)
+    return false
+  }
+
+  return !!data
 }

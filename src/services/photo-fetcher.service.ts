@@ -1,7 +1,8 @@
-import { createPlacePhotos, hasPlacePhotos, setPrimaryPhoto } from '../db/place-photos'
+import { createPlacePhotos, setPrimaryPhoto } from '../db/place-photos'
 import { Place, updatePlace } from '../db/places'
 import { calculateGeometryCenter } from '../utils/common'
 import { GooglePlacesPhoto, googlePlacesPhotosService } from './google-places.service'
+import { recalculateAndUpdateScores } from './score.service'
 import { WikimediaPhoto, wikimediaPhotosService } from './wikimedia-photos.service'
 
 export interface PhotoFetchResult {
@@ -9,7 +10,7 @@ export interface PhotoFetchResult {
   placeName: string
   success: boolean
   photosFound: number
-  source: 'wikimedia' | 'google_places' | 'none'
+  source: 'wikimedia' | 'google_places' | 'both' | 'none'
   error?: string
 }
 
@@ -42,9 +43,6 @@ export class PhotoFetcherService {
         console.log(`📍 Location: ${latitude}, ${longitude}`)
       }
 
-      // Check if this is the first time fetching photos (before we save any)
-      const hadPhotosBefore = await hasPlacePhotos(place.id)
-
       // Try Wikimedia first (free)
       console.log(`1️⃣ Trying Wikimedia Commons...`)
       const wikimediaPhotos = await wikimediaPhotosService.searchPlacePhotos(
@@ -54,23 +52,25 @@ export class PhotoFetcherService {
         place.osm_id || null,
       )
 
-      if (wikimediaPhotos.length > 0) {
-        console.log(`✅ Found ${wikimediaPhotos.length} photos from Wikimedia Commons`)
+      if (wikimediaPhotos.length > 0 && wikimediaPhotos.length < 4) {
+        console.log(`⚠️ Found only ${wikimediaPhotos.length} photos from Wikimedia Commons, will also fetch Google Places`)
+        await this.savePhotos(place.id, wikimediaPhotos, 'wikimedia')
+      } else if (wikimediaPhotos.length >= 4) {
+        console.log(`✅ Found ${wikimediaPhotos.length} photos from Wikimedia Commons (enough)`)
         await this.savePhotos(place.id, wikimediaPhotos, 'wikimedia')
         result.success = true
         result.photosFound = wikimediaPhotos.length
         result.source = 'wikimedia'
-        await this.markPhotosFetched(place.id, true, hadPhotosBefore)
+        await this.markPhotosFetched(place.id)
         return result
       }
 
-      // Fallback to Google Places
-      console.log(`2️⃣ No Wikimedia photos found, trying Google Places...`)
+      // Try Google Places if no Wikimedia photos or less than 4 found
+      console.log(`2️⃣ ${wikimediaPhotos.length > 0 ? 'Also trying' : 'Trying'} Google Places...`)
       if (latitude === null || longitude === null) {
         console.log(`⚠️ No coordinates available, skipping Google Places search`)
         result.error = 'No coordinates available for Google Places search'
-        // Mark as fetched to avoid repeated attempts (no coordinates available)
-        await this.markPhotosFetched(place.id, false, hadPhotosBefore)
+        await this.markPhotosFetched(place.id)
         return result
       }
 
@@ -89,8 +89,8 @@ export class PhotoFetcherService {
         console.log(`✅ Found ${googlePhotos.length} photos from Google Places`)
         await this.savePhotos(place.id, googlePhotos, 'google_places')
         result.success = true
-        result.photosFound = googlePhotos.length
-        result.source = 'google_places'
+        result.photosFound = wikimediaPhotos.length + googlePhotos.length
+        result.source = wikimediaPhotos.length > 0 ? 'both' : 'google_places'
 
         // Store Google Places ID if we found one and it's different from existing
         if (googlePlacesId && googlePlacesId !== existingGooglePlacesId) {
@@ -100,7 +100,7 @@ export class PhotoFetcherService {
           })
         }
 
-        await this.markPhotosFetched(place.id, true, hadPhotosBefore)
+        await this.markPhotosFetched(place.id)
         return result
       }
 
@@ -112,18 +112,26 @@ export class PhotoFetcherService {
         })
       }
 
+      // If we have some Wikimedia photos but no Google Places photos, that's still a success
+      if (wikimediaPhotos.length > 0) {
+        console.log(`✅ Using ${wikimediaPhotos.length} photos from Wikimedia Commons only`)
+        result.success = true
+        result.photosFound = wikimediaPhotos.length
+        result.source = 'wikimedia'
+        await this.markPhotosFetched(place.id)
+        return result
+      }
+
       console.log(`❌ No photos found from any source`)
       result.error = 'No photos found'
-      // Mark as fetched to avoid repeated attempts (even though no photos found)
-      await this.markPhotosFetched(place.id, false, hadPhotosBefore)
+      await this.markPhotosFetched(place.id)
       return result
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       console.error(`❌ Error fetching photos:`, errorMessage)
       result.error = errorMessage
-      // Check if photos existed before in case of error
-      const hadPhotosBefore = await hasPlacePhotos(place.id)
-      await this.markPhotosFetched(place.id, false, hadPhotosBefore)
+
+      await this.markPhotosFetched(place.id)
       return result
     }
   }
@@ -173,40 +181,15 @@ export class PhotoFetcherService {
    * Mark that photos have been fetched for this place
    * If photos were successfully fetched for the first time, bump scores by +2
    */
-  private async markPhotosFetched(placeId: string, photosFound: boolean, hadPhotosBefore: boolean): Promise<void> {
+  private async markPhotosFetched(placeId: string): Promise<void> {
     try {
-      // Check if this is the first time photos are being fetched
-      const isFirstTime = !hadPhotosBefore && photosFound
-
-      let updates: Partial<Place> = {
+      // Update photos_fetched_at timestamp
+      await updatePlace(placeId, {
         photos_fetched_at: new Date().toISOString(),
-      }
+      })
 
-      // If this is the first time photos are fetched, bump scores
-      if (isFirstTime) {
-        const { supabase } = await import('../services/supabase.service')
-        const { data: place, error: fetchError } = await supabase
-          .from('places')
-          .select('score, enhancement_score')
-          .eq('id', placeId)
-          .single()
-
-        if (!fetchError && place) {
-          const currentScore = place.score || 0
-          const currentEnhancementScore = place.enhancement_score || 0
-          const newEnhancementScore = currentEnhancementScore + 2
-          const newScore = currentScore + 2
-
-          updates.score = newScore
-          updates.enhancement_score = newEnhancementScore
-
-          console.log(
-            `📈 Bumped scores: ${currentScore} → ${newScore} (+2 total), ${currentEnhancementScore} → ${newEnhancementScore} (+2 enhancement)`,
-          )
-        }
-      }
-
-      await updatePlace(placeId, updates)
+      // Recalculate scores using centralized function
+      await recalculateAndUpdateScores(placeId)
     } catch (error) {
       console.error(`❌ Error marking photos as fetched:`, error)
       // Don't throw - this is not critical
