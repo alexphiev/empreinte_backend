@@ -33,7 +33,8 @@
     "fetch-ratings": "ts-node src/scripts/fetch-ratings.ts",
     "clear-osm-cache": "./clear-osm-cache.sh",
     "clear-overture-cache": "./clear-overture-cache.sh",
-    "generate-types": "supabase gen types typescript --project-id ydtttobvqajzglvdcqas > src/types/database.ts"
+    "generate-types": "supabase gen types typescript --project-id ydtttobvqajzglvdcqas > src/types/database.ts",
+    "types": "supabase gen types typescript --project-id ydtttobvqajzglvdcqas > src/types/database.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -116,7 +116,6 @@ export type Database = {
           google_rating_fetched_at: string | null
           id: string
           last_enhanced_at: string | null
-          last_score_updated_at: string | null
           location: unknown
           metadata: Json | null
           name: string | null
@@ -127,6 +126,7 @@ export type Database = {
           reddit_generated: string | null
           region: string | null
           score: number
+          score_updated_at: string | null
           short_name: string | null
           source: string | null
           source_id: string | null
@@ -156,7 +156,6 @@ export type Database = {
           google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
-          last_score_updated_at?: string | null
           location?: unknown
           metadata?: Json | null
           name?: string | null
@@ -167,6 +166,7 @@ export type Database = {
           reddit_generated?: string | null
           region?: string | null
           score: number
+          score_updated_at?: string | null
           short_name?: string | null
           source?: string | null
           source_id?: string | null
@@ -196,7 +196,6 @@ export type Database = {
           google_rating_fetched_at?: string | null
           id?: string
           last_enhanced_at?: string | null
-          last_score_updated_at?: string | null
           location?: unknown
           metadata?: Json | null
           name?: string | null
@@ -207,6 +206,7 @@ export type Database = {
           reddit_generated?: string | null
           region?: string | null
           score?: number
+          score_updated_at?: string | null
           short_name?: string | null
           source?: string | null
           source_id?: string | null

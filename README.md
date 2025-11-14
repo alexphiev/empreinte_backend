@@ -365,16 +365,16 @@ pnpm recalculate-scores 01/01/2025
 **What it does**:
 
 - Iterates through all places in batches of 1000 (handles large databases)
-- Optionally filters by `last_score_updated_at` date
+- Optionally filters by `score_updated_at` date
 - Recalculates scores based on current enhancement data:
   - Source score (base + park type + verification status)
   - Enhancement score (website + Reddit + Wikipedia + photos + Google ratings)
-- Updates `score`, `source_score`, `enhancement_score`, and `last_score_updated_at` fields
+- Updates `score`, `source_score`, `enhancement_score`, and `score_updated_at` fields
 - Shows progress and summary statistics
 
 **Parameters**:
 
-- `DD/MM/YYYY`: Optional date filter. Only recalculates places with `last_score_updated_at` before this date
+- `DD/MM/YYYY`: Optional date filter. Only recalculates places with `score_updated_at` before this date
 
 ## Maintenance Scripts
 

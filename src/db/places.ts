@@ -21,7 +21,7 @@ export async function getPlaceById(id: string): Promise<PostgrestSingleResponse<
 export async function getPlacesForScoreCalculation(
   limit?: number,
   offset?: number,
-  maxLastScoreUpdatedAt?: Date,
+  maxScoreUpdatedAt?: Date,
 ): Promise<PostgrestResponse<PlaceWithScoreData>> {
   let query = supabase
     .from('places')
@@ -29,9 +29,11 @@ export async function getPlacesForScoreCalculation(
       '*, generated_places!generated_places_place_id_fkey(id), wikipedia!wikipedia_place_id_fkey(score), place_photos!place_photos_place_id_fkey(id)',
     )
 
-  if (maxLastScoreUpdatedAt) {
-    query = query.or(`last_score_updated_at.is.null,last_score_updated_at.lt.${maxLastScoreUpdatedAt.toISOString()}`)
+  if (maxScoreUpdatedAt) {
+    query = query.or(`score_updated_at.is.null,score_updated_at.lt.${maxScoreUpdatedAt.toISOString()}`)
   }
+
+  query = query.order('id', { ascending: true })
 
   if (limit !== undefined) {
     query = query.limit(limit)
@@ -44,11 +46,11 @@ export async function getPlacesForScoreCalculation(
   return query as any
 }
 
-export async function getPlacesCount(maxLastScoreUpdatedAt?: Date): Promise<{ count: number | null; error: any }> {
+export async function getPlacesCount(maxScoreUpdatedAt?: Date): Promise<{ count: number | null; error: any }> {
   let query = supabase.from('places').select('id', { count: 'estimated', head: true })
 
-  if (maxLastScoreUpdatedAt) {
-    query = query.or(`last_score_updated_at.is.null,last_score_updated_at.lt.${maxLastScoreUpdatedAt.toISOString()}`)
+  if (maxScoreUpdatedAt) {
+    query = query.or(`score_updated_at.is.null,score_updated_at.lt.${maxScoreUpdatedAt.toISOString()}`)
   }
 
   const { count, error } = await query
@@ -123,7 +125,7 @@ export async function updatePlaceScores(
     enhancement_score: Math.round(enhancementScore),
     source_score: sourceScore !== undefined ? Math.round(sourceScore) : undefined,
     score: Math.round(totalScore),
-    last_score_updated_at: new Date().toISOString(),
+    score_updated_at: new Date().toISOString(),
   }
 
   // Include source_score if provided
@@ -164,7 +166,7 @@ export async function batchUpdatePlaceScores(
     source_score: Math.round(update.sourceScore),
     enhancement_score: Math.round(update.enhancementScore),
     score: Math.round(update.totalScore),
-    last_score_updated_at: timestamp,
+    score_updated_at: timestamp,
   }))
 
   const { error } = await supabase.from('places').upsert(data, { onConflict: 'id' })

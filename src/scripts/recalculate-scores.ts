@@ -1,10 +1,5 @@
+import { batchUpdatePlaceScores, getPlacesCount, getPlacesForScoreCalculation, PlaceWithScoreData } from '@/db/places'
 import 'dotenv/config'
-import {
-  batchUpdatePlaceScores,
-  getPlacesForScoreCalculation,
-  getPlacesCount,
-  PlaceWithScoreData,
-} from '@/db/places'
 import { calculateScore } from '../services/score.service'
 
 const MAX_RETRIES = 3
@@ -17,16 +12,16 @@ async function sleep(ms: number) {
 async function getPlacesWithRetry(
   limit: number,
   offset: number,
-  maxLastScoreUpdatedAt?: Date,
+  maxScoreUpdatedAt?: Date,
   attempt = 1,
 ): Promise<{ data: PlaceWithScoreData[] | null; error: any }> {
-  const { data, error } = await getPlacesForScoreCalculation(limit, offset, maxLastScoreUpdatedAt)
+  const { data, error } = await getPlacesForScoreCalculation(limit, offset, maxScoreUpdatedAt)
 
   if (error) {
     if (attempt < MAX_RETRIES) {
       console.log(`⚠️  Fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${RETRY_DELAY}ms...`)
       await sleep(RETRY_DELAY)
-      return getPlacesWithRetry(limit, offset, maxLastScoreUpdatedAt, attempt + 1)
+      return getPlacesWithRetry(limit, offset, maxScoreUpdatedAt, attempt + 1)
     }
     throw new Error(`Failed to fetch places after ${MAX_RETRIES} attempts: ${error.message}`)
   }
@@ -76,13 +71,12 @@ async function recalculateScores() {
     console.log(`📊 Total places to process: ${totalPlaces.toLocaleString()}\n`)
 
     const BATCH_SIZE = 1000
-    let offset = 0
     let updatedCount = 0
     let totalProcessed = 0
     let hasMore = true
 
     while (hasMore) {
-      const { data: places, error } = await getPlacesWithRetry(BATCH_SIZE, offset, maxScoringDate || undefined)
+      const { data: places, error } = await getPlacesWithRetry(BATCH_SIZE, 0, maxScoringDate || undefined)
 
       if (error) {
         console.error('❌ Error fetching places:', error)
@@ -158,8 +152,6 @@ async function recalculateScores() {
       // Check if we got fewer results than the batch size
       if (places.length < BATCH_SIZE) {
         hasMore = false
-      } else {
-        offset += BATCH_SIZE
       }
     }
 
