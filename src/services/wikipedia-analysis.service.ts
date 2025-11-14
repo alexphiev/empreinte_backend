@@ -72,6 +72,10 @@ export async function analyzePlaceWikipediaCore(
     }
 
     if (!wikipediaData) {
+      await updatePlace(place.id, {
+        wikipedia_analyzed_at: new Date().toISOString(),
+      })
+
       return {
         result: {
           placeId: place.id,

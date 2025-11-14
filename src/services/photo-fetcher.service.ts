@@ -10,7 +10,7 @@ export interface PhotoFetchResult {
   placeName: string
   success: boolean
   photosFound: number
-  source: 'wikimedia' | 'google_places' | 'none'
+  source: 'wikimedia' | 'google_places' | 'both' | 'none'
   error?: string
 }
 
@@ -52,8 +52,11 @@ export class PhotoFetcherService {
         place.osm_id || null,
       )
 
-      if (wikimediaPhotos.length > 0) {
-        console.log(`✅ Found ${wikimediaPhotos.length} photos from Wikimedia Commons`)
+      if (wikimediaPhotos.length > 0 && wikimediaPhotos.length < 4) {
+        console.log(`⚠️ Found only ${wikimediaPhotos.length} photos from Wikimedia Commons, will also fetch Google Places`)
+        await this.savePhotos(place.id, wikimediaPhotos, 'wikimedia')
+      } else if (wikimediaPhotos.length >= 4) {
+        console.log(`✅ Found ${wikimediaPhotos.length} photos from Wikimedia Commons (enough)`)
         await this.savePhotos(place.id, wikimediaPhotos, 'wikimedia')
         result.success = true
         result.photosFound = wikimediaPhotos.length
@@ -62,8 +65,8 @@ export class PhotoFetcherService {
         return result
       }
 
-      // Fallback to Google Places
-      console.log(`2️⃣ No Wikimedia photos found, trying Google Places...`)
+      // Try Google Places if no Wikimedia photos or less than 4 found
+      console.log(`2️⃣ ${wikimediaPhotos.length > 0 ? 'Also trying' : 'Trying'} Google Places...`)
       if (latitude === null || longitude === null) {
         console.log(`⚠️ No coordinates available, skipping Google Places search`)
         result.error = 'No coordinates available for Google Places search'
@@ -86,8 +89,8 @@ export class PhotoFetcherService {
         console.log(`✅ Found ${googlePhotos.length} photos from Google Places`)
         await this.savePhotos(place.id, googlePhotos, 'google_places')
         result.success = true
-        result.photosFound = googlePhotos.length
-        result.source = 'google_places'
+        result.photosFound = wikimediaPhotos.length + googlePhotos.length
+        result.source = wikimediaPhotos.length > 0 ? 'both' : 'google_places'
 
         // Store Google Places ID if we found one and it's different from existing
         if (googlePlacesId && googlePlacesId !== existingGooglePlacesId) {
@@ -107,6 +110,16 @@ export class PhotoFetcherService {
         await updatePlace(place.id, {
           google_places_id: googlePlacesId,
         })
+      }
+
+      // If we have some Wikimedia photos but no Google Places photos, that's still a success
+      if (wikimediaPhotos.length > 0) {
+        console.log(`✅ Using ${wikimediaPhotos.length} photos from Wikimedia Commons only`)
+        result.success = true
+        result.photosFound = wikimediaPhotos.length
+        result.source = 'wikimedia'
+        await this.markPhotosFetched(place.id)
+        return result
       }
 
       console.log(`❌ No photos found from any source`)

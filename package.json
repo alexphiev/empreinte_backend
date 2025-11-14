@@ -29,6 +29,7 @@
     "analyze-place-reddit": "ts-node src/scripts/analyze-place-reddit.ts",
     "analyze-urls": "ts-node src/scripts/analyze-urls.ts",
     "verify-places": "ts-node src/scripts/verify-places.ts",
+    "clean-invalid-wikipedia": "ts-node src/scripts/clean-invalid-wikipedia.ts",
     "fetch-photos": "ts-node src/scripts/fetch-photos.ts",
     "fetch-ratings": "ts-node src/scripts/fetch-ratings.ts",
     "clear-osm-cache": "./clear-osm-cache.sh",

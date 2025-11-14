@@ -1,32 +1,17 @@
 import { batchUpdatePlaceScores, getPlacesCount, getPlacesForScoreCalculation, PlaceWithScoreData } from '@/db/places'
 import 'dotenv/config'
 import { calculateScore } from '../services/score.service'
-
-const MAX_RETRIES = 3
-const RETRY_DELAY = 2000
-
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+import { retryAsync } from '../utils/retry'
 
 async function getPlacesWithRetry(
   limit: number,
   offset: number,
   maxScoreUpdatedAt?: Date,
-  attempt = 1,
 ): Promise<{ data: PlaceWithScoreData[] | null; error: any }> {
-  const { data, error } = await getPlacesForScoreCalculation(limit, offset, maxScoreUpdatedAt)
-
-  if (error) {
-    if (attempt < MAX_RETRIES) {
-      console.log(`⚠️  Fetch failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${RETRY_DELAY}ms...`)
-      await sleep(RETRY_DELAY)
-      return getPlacesWithRetry(limit, offset, maxScoreUpdatedAt, attempt + 1)
-    }
-    throw new Error(`Failed to fetch places after ${MAX_RETRIES} attempts: ${error.message}`)
-  }
-
-  return { data, error }
+  return retryAsync(
+    () => getPlacesForScoreCalculation(limit, offset, maxScoreUpdatedAt),
+    'Fetch places',
+  )
 }
 
 interface ScoreRecalculationResult {

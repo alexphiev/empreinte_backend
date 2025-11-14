@@ -14,6 +14,18 @@ export interface PlaceWithPhotos extends Place {
   place_photos?: PlacePhoto[]
 }
 
+export interface PlaceWithWikipediaQuery {
+  id: string
+  name: string | null
+  metadata: {
+    tags?: {
+      wikipedia?: string
+      'wikipedia:fr'?: string
+    }
+  } | null
+  wikipedia_query: string | null
+}
+
 export async function getPlaceById(id: string): Promise<PostgrestSingleResponse<Place>> {
   return supabase.from('places').select('*').eq('id', id).single()
 }
@@ -56,6 +68,105 @@ export async function getPlacesCount(maxScoreUpdatedAt?: Date): Promise<{ count:
   const { count, error } = await query
 
   return { count, error }
+}
+
+/**
+ * Get places without photos fetched
+ */
+export async function getPlacesWithoutPhotos(
+  limit: number,
+  offset: number,
+  minScore?: number,
+): Promise<{ data: Place[] | null; error: any }> {
+  let query = supabase
+    .from('places')
+    .select('*')
+    .is('photos_fetched_at', null)
+    .order('score', { ascending: false })
+
+  if (minScore !== undefined) {
+    query = query.gte('score', minScore)
+  }
+
+  query = query.range(offset, offset + limit - 1)
+
+  return query
+}
+
+/**
+ * Count places without photos fetched
+ */
+export async function getPlacesWithoutPhotosCount(minScore?: number): Promise<{ count: number | null; error: any }> {
+  let query = supabase.from('places').select('id', { count: 'exact', head: true }).is('photos_fetched_at', null)
+
+  if (minScore !== undefined) {
+    query = query.gte('score', minScore)
+  }
+
+  const { count, error } = await query
+
+  return { count, error }
+}
+
+/**
+ * Get places that have photos but no photos_fetched_at timestamp
+ */
+export async function getPlacesWithPhotosButNoTimestamp(
+  limit: number,
+  offset: number,
+  minScore?: number,
+): Promise<{ data: Place[] | null; error: any }> {
+  let query = supabase
+    .from('places')
+    .select('*, place_photos!inner(id)')
+    .is('photos_fetched_at', null)
+    .order('score', { ascending: false })
+
+  if (minScore !== undefined) {
+    query = query.gte('score', minScore)
+  }
+
+  query = query.range(offset, offset + limit - 1)
+
+  return query
+}
+
+/**
+ * Count places that have photos but no photos_fetched_at timestamp
+ */
+export async function getPlacesWithPhotosButNoTimestampCount(
+  minScore?: number,
+): Promise<{ count: number | null; error: any }> {
+  let query = supabase
+    .from('places')
+    .select('id, place_photos!inner(id)', { count: 'exact', head: true })
+    .is('photos_fetched_at', null)
+
+  if (minScore !== undefined) {
+    query = query.gte('score', minScore)
+  }
+
+  const { count, error } = await query
+
+  return { count, error }
+}
+
+/**
+ * Batch update photos_fetched_at timestamp for multiple places
+ */
+export async function batchUpdatePhotosFetchedAt(placeIds: string[]): Promise<{ error: any }> {
+  const timestamp = new Date().toISOString()
+
+  if (placeIds.length === 0) {
+    return { error: null }
+  }
+
+  const { error } = await supabase
+    .from('places')
+    .update({ photos_fetched_at: timestamp })
+    .in('id', placeIds)
+
+  return { error }
 }
 
 /**
@@ -186,4 +297,52 @@ export async function getPlaceByOsmId(osmId: string): Promise<PostgrestSingleRes
  */
 export async function createPlace(placeData: TablesInsert<'places'>): Promise<PostgrestSingleResponse<Place>> {
   return supabase.from('places').insert(placeData).select().single()
+}
+
+/**
+ * Get places with Wikipedia queries in batches
+ */
+export async function getPlacesWithWikipediaQuery(
+  limit?: number,
+  offset?: number,
+): Promise<{
+  data: PlaceWithWikipediaQuery[] | null
+  error: any
+}> {
+  let query = supabase
+    .from('places')
+    .select('id, name, metadata, wikipedia_query')
+    .not('wikipedia_query', 'is', null)
+    .order('id', { ascending: true })
+
+  if (limit !== undefined) {
+    query = query.limit(limit)
+  }
+
+  if (offset !== undefined) {
+    query = query.range(offset, offset + (limit || 1000) - 1)
+  }
+
+  const result = await query
+
+  return {
+    data: result.data as PlaceWithWikipediaQuery[] | null,
+    error: result.error,
+  }
+}
+
+/**
+ * Clear Wikipedia data from a place
+ */
+export async function clearPlaceWikipediaData(placeId: string): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('places')
+    .update({
+      wikipedia_query: null,
+      wikipedia_analyzed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', placeId)
+
+  return { error }
 }

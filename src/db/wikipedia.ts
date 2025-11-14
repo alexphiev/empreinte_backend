@@ -37,3 +37,9 @@ export async function updateWikipediaScore(
     .select()
     .single()
 }
+
+export async function deleteWikipediaByPlaceId(placeId: string): Promise<{ error: any }> {
+  const { error } = await supabase.from('wikipedia').delete().eq('place_id', placeId)
+
+  return { error }
+}

@@ -1,4 +1,5 @@
 import { formatDateForWikipedia } from '../utils/wikipedia.utils'
+import { calculateStringSimilarity } from '../utils/string.utils'
 import { SCORE_CONFIG } from './score-config.service'
 
 interface WikipediaSearchResult {
@@ -636,13 +637,19 @@ export class WikipediaService {
     try {
       console.log(`🔍 Searching Wikipedia by place name: ${placeName}`)
 
-      // Always prioritize French first, then English as fallback
       const languages = ['fr', 'en']
+      const minSimilarityThreshold = 0.7
 
       for (const language of languages) {
         const searchResult = await this.searchWikipediaArticle(placeName, language)
         if (searchResult) {
-          console.log(`📄 Found Wikipedia article in ${language}`)
+          const similarity = calculateStringSimilarity(placeName, searchResult.articleTitle)
+          console.log(`📄 Found Wikipedia article in ${language}: "${searchResult.articleTitle}" (similarity: ${similarity.toFixed(2)})`)
+
+          if (similarity < minSimilarityThreshold) {
+            console.log(`⚠️ Skipping - similarity too low (${similarity.toFixed(2)} < ${minSimilarityThreshold})`)
+            continue
+          }
 
           const wikipediaData = await this.fetchWikipediaData(searchResult.pageId, searchResult.articleTitle, language)
 

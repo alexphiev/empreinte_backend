@@ -16,6 +16,7 @@
 import 'dotenv/config'
 import { Place, getPlacesForWikipediaAnalysis } from '../db/places'
 import { analyzePlaceWikipediaCore } from '../services/wikipedia-analysis.service'
+import { retryAsync } from '../utils/retry'
 
 interface ProcessStats {
   processedCount: number
@@ -53,7 +54,10 @@ class BatchWikipediaAnalyzer {
     }
 
     // Get places that haven't been analyzed (or all if bypassing)
-    const { data: placesToProcess, error: queryError } = await getPlacesForWikipediaAnalysis(this.bypassCache, limit)
+    const { data: placesToProcess, error: queryError } = await retryAsync(
+      () => getPlacesForWikipediaAnalysis(this.bypassCache, limit),
+      'Fetch places for Wikipedia analysis',
+    )
 
     if (queryError) {
       console.error('❌ Error fetching places:', queryError)
