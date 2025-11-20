@@ -1,5 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { SCORE_CONFIG } from '../services/score-config.service'
 import { supabase } from '../services/supabase.service'
 import { transformGeometry } from './geometry'
 
@@ -211,12 +212,33 @@ export function formatPlaceObject(options: CreatePlaceOptions): any {
     region,
     country = 'France',
     description,
-    source_score = 1,
-    score = 1,
+    source_score,
+    score,
     metadata,
     website,
     wikipedia_query,
   } = options
+
+  // Default scores based on type (will be recalculated by calculateScore() if not provided)
+  let defaultSourceScore = SCORE_CONFIG.base
+  if (type === 'national_park') {
+    defaultSourceScore = SCORE_CONFIG.nationalPark
+  } else if (type === 'regional_park') {
+    defaultSourceScore = SCORE_CONFIG.regionalPark
+  }
+
+  const finalSourceScore = source_score ?? defaultSourceScore
+
+  // Calculate initial enhancement score based on available data at insert time
+  // Note: This is a simplified calculation - full recalculation happens via calculateScore() after insert
+  let initialEnhancementScore = 0
+  if (website) {
+    initialEnhancementScore += SCORE_CONFIG.hasWebsite
+  }
+  // Note: Wikipedia bonus is only added after analysis, not just for having wikipedia_query
+
+  const finalEnhancementScore = initialEnhancementScore
+  const finalScore = score ?? finalSourceScore + finalEnhancementScore
 
   return {
     source,
@@ -230,8 +252,9 @@ export function formatPlaceObject(options: CreatePlaceOptions): any {
     region,
     country,
     description,
-    source_score,
-    score,
+    source_score: finalSourceScore,
+    enhancement_score: finalEnhancementScore,
+    score: finalScore,
     metadata,
     website,
     wikipedia_query,

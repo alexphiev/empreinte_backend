@@ -196,9 +196,7 @@ class FrenchNationalParksFetcher {
         allPolygons.push(simplifiedRings)
       } else if (geom.type === 'MultiPolygon') {
         for (const polygon of geom.coordinates) {
-          const simplifiedRings = polygon.map((ring: Array<[number, number]>) =>
-            simplifyCoordinates(ring, 0.0002),
-          )
+          const simplifiedRings = polygon.map((ring: Array<[number, number]>) => simplifyCoordinates(ring, 0.0002))
           allPolygons.push(simplifiedRings)
         }
       }
@@ -252,8 +250,11 @@ class FrenchNationalParksFetcher {
 
     const osmId = String(osmData.id)
     const wikipediaQuery = osmData?.tags?.wikipedia || osmData?.tags?.['wikipedia:fr'] || null
+    const website = osmData?.tags?.website || null
     const sourceId = `datagouv:national:${parkName.toLowerCase().replace(/\s+/g, '-')}`
 
+    // formatPlaceObject will set correct score for national_park type
+    // Scores will be recalculated after insert using calculateScore() when needed
     return formatPlaceObject({
       source: 'MANUAL',
       sourceId,
@@ -266,9 +267,7 @@ class FrenchNationalParksFetcher {
       region: null,
       country: 'France',
       description: null,
-      source_score: 10,
-      score: 10,
-      website: null,
+      website,
       wikipedia_query: wikipediaQuery,
       metadata: {
         source_url_reserves: this.reservesUrl,

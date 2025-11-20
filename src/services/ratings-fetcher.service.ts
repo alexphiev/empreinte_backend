@@ -1,6 +1,7 @@
 import { Place, updatePlace } from '../db/places'
 import { calculateGeometryCenter } from '../utils/common'
 import { googlePlacesService } from './google-places.service'
+import { recalculateAndUpdateScores } from './score.service'
 
 export interface RatingsFetchResult {
   placeId: string
@@ -140,20 +141,11 @@ export class RatingsFetcherService {
         throw fetchError
       }
 
-      // Only bump score if this is the first time collecting ratings
-      const isFirstTime = !place.google_rating
-      const currentScore = place.score || 0
-      const currentEnhancementScore = place.enhancement_score || 0
-      const newEnhancementScore = isFirstTime ? currentEnhancementScore + 2 : currentEnhancementScore
-      const newScore = isFirstTime ? currentScore + 2 : currentScore
-
       // Prepare updates
       const updates: Partial<Place> = {
         google_rating: rating,
         google_rating_count: ratingCount,
         google_rating_fetched_at: new Date().toISOString(),
-        score: newScore,
-        enhancement_score: newEnhancementScore,
       }
 
       // Store Google Places ID if we found one and it's different
@@ -168,15 +160,8 @@ export class RatingsFetcherService {
         throw error
       }
 
-      if (isFirstTime) {
-        console.log(
-          `✅ Saved ratings and bumped scores: ${currentScore} → ${newScore} (+2 total), ${currentEnhancementScore} → ${newEnhancementScore} (+2 enhancement)`,
-        )
-      } else {
-        console.log(
-          `✅ Updated ratings (scores unchanged: ${currentScore} total, ${currentEnhancementScore} enhancement)`,
-        )
-      }
+      // Recalculate scores using centralized function
+      await recalculateAndUpdateScores(placeId)
     } catch (error) {
       console.error(`❌ Error in saveRatings:`, error)
       throw error

@@ -121,7 +121,7 @@ async function migratePlaceTypes() {
     stats.total = places.length
     console.log(`📊 Found ${places.length} places to process\n`)
 
-    const invalidPlaces = places.filter((place) => !isValidType(place.type))
+    const invalidPlaces = places.filter((place) => !isValidType(place.type || ''))
     console.log(`🔍 Found ${invalidPlaces.length} places with invalid types\n`)
 
     if (invalidPlaces.length === 0) {
@@ -132,7 +132,7 @@ async function migratePlaceTypes() {
     console.log('Examples of invalid types:')
     const typeCounts = invalidPlaces.reduce(
       (acc, place) => {
-        acc[place.type] = (acc[place.type] || 0) + 1
+        acc[place.type || ''] = (acc[place.type || ''] || 0) + 1
         return acc
       },
       {} as Record<string, number>,
@@ -152,7 +152,7 @@ async function migratePlaceTypes() {
         console.log(`📍 Processing ${i + 1}/${invalidPlaces.length}...`)
       }
 
-      const tags = place.metadata?.tags || {}
+      const tags = (place.metadata as Record<string, string>) || {}
       const newType = formatType(tags)
 
       if (newType === 'unknown') {

@@ -1,13 +1,37 @@
 import 'dotenv/config'
-import { supabase } from '../services/supabase.service'
 import { photoFetcherService } from '../services/photo-fetcher.service'
-import { Place } from '../db/places'
+import {
+  Place,
+  getPlacesWithoutPhotos,
+  getPlacesWithoutPhotosCount,
+  getPlacesWithPhotosButNoTimestamp,
+  getPlacesWithPhotosButNoTimestampCount,
+  batchUpdatePhotosFetchedAt,
+} from '../db/places'
+import { retryAsync } from '../utils/retry'
 
 interface ProcessStats {
   processedCount: number
   successCount: number
   errorCount: number
   photosFound: number
+  timestampUpdated: number
+}
+
+async function getPlacesWithRetry(
+  limit: number,
+  offset: number,
+  minScore?: number,
+): Promise<{ data: Place[] | null; error: any }> {
+  return retryAsync(() => getPlacesWithoutPhotos(limit, offset, minScore), 'Fetch places')
+}
+
+async function getPlacesWithPhotosWithRetry(
+  limit: number,
+  offset: number,
+  minScore?: number,
+): Promise<{ data: Place[] | null; error: any }> {
+  return retryAsync(() => getPlacesWithPhotosButNoTimestamp(limit, offset, minScore), 'Fetch places with photos')
 }
 
 class PhotoFetcher {
@@ -19,92 +43,154 @@ class PhotoFetcher {
       successCount: 0,
       errorCount: 0,
       photosFound: 0,
+      timestampUpdated: 0,
     }
   }
 
-  private printProgress(): void {
+  private printProgress(totalPlaces: number): void {
     console.log(`\n📊 Progress:`)
-    console.log(`   Processed: ${this.stats.processedCount}`)
+    console.log(`   Processed: ${this.stats.processedCount}/${totalPlaces}`)
     console.log(`   Success: ${this.stats.successCount}`)
     console.log(`   Errors: ${this.stats.errorCount}`)
     console.log(`   Photos found: ${this.stats.photosFound}`)
+    console.log(`   Timestamps updated: ${this.stats.timestampUpdated}`)
   }
 
-  public async fetchPhotosForPlaces(minScore?: number, limit?: number): Promise<void> {
+  private async updateExistingPhotosTimestamps(minScore?: number): Promise<void> {
+    console.log('\n🕒 Checking for places with photos but missing timestamps...')
+
+    const { count, error: countError } = await getPlacesWithPhotosButNoTimestampCount(minScore)
+
+    if (countError || count === null) {
+      console.error('❌ Error counting places:', countError)
+      return
+    }
+
+    if (count === 0) {
+      console.log('✅ No places need timestamp updates')
+      return
+    }
+
+    console.log(`📋 Found ${count.toLocaleString()} places with photos needing timestamps\n`)
+
+    const BATCH_SIZE = 1000
+    let offset = 0
+    let hasMore = true
+    let updatedCount = 0
+
+    while (hasMore) {
+      const { data: places, error } = await getPlacesWithPhotosWithRetry(BATCH_SIZE, offset, minScore)
+
+      if (error) {
+        console.error('❌ Error fetching places:', error)
+        break
+      }
+
+      if (!places || places.length === 0) {
+        break
+      }
+
+      const placeIds = places.map((p) => p.id)
+      const { error: updateError } = await batchUpdatePhotosFetchedAt(placeIds)
+
+      if (updateError) {
+        console.error('❌ Error updating timestamps:', updateError)
+      } else {
+        updatedCount += placeIds.length
+        this.stats.timestampUpdated += placeIds.length
+        console.log(`✅ Updated ${updatedCount}/${count} timestamps`)
+      }
+
+      if (places.length < BATCH_SIZE) {
+        hasMore = false
+      } else {
+        offset += BATCH_SIZE
+      }
+    }
+
+    console.log(`\n✅ Timestamp update complete! Updated ${updatedCount} places\n`)
+  }
+
+  public async fetchPhotosForPlaces(minScore?: number, maxPlaces?: number): Promise<void> {
+    const effectiveMinScore = minScore ?? 3
+
     console.log(`\n📸 Starting photo fetch process`)
-    if (minScore !== undefined) {
-      console.log(`📊 Minimum score filter: ${minScore}`)
-    }
-    if (limit !== undefined) {
-      console.log(`🔢 Limit: ${limit} places`)
+    console.log(`📊 Minimum score filter: ${effectiveMinScore}`)
+    if (maxPlaces !== undefined) {
+      console.log(`🔢 Max places to process: ${maxPlaces}`)
     }
 
-    // Get places without photos
-    let query = supabase
-      .from('places')
-      .select('*')
-      .is('photos_fetched_at', null) // Places that haven't had photos fetched yet
+    await this.updateExistingPhotosTimestamps(effectiveMinScore)
 
-    if (minScore !== undefined) {
-      query = query.gte('score', minScore)
+    const { count: totalPlaces, error: countError } = await getPlacesWithoutPhotosCount(effectiveMinScore)
+
+    if (countError || totalPlaces === null) {
+      console.error('❌ Error fetching places count:', countError)
+      throw countError
     }
 
-    // Order by score descending to prioritize higher-scored places
-    query = query.order('score', { ascending: false })
-
-    if (limit !== undefined) {
-      query = query.limit(limit)
-    }
-
-    const { data: placesToProcess, error: queryError } = await query
-
-    if (queryError) {
-      console.error('❌ Error fetching places:', queryError)
-      throw queryError
-    }
-
-    if (!placesToProcess || placesToProcess.length === 0) {
+    if (totalPlaces === 0) {
       console.log('✅ No places to process!')
       return
     }
 
-    console.log(`📋 Found ${placesToProcess.length} places to process`)
+    const placesToProcess = maxPlaces !== undefined ? Math.min(totalPlaces, maxPlaces) : totalPlaces
+    console.log(`📋 Found ${placesToProcess.toLocaleString()} places to process\n`)
 
-    // Process places one by one with delay
-    for (let i = 0; i < placesToProcess.length; i++) {
-      const place = placesToProcess[i] as Place
-      console.log(`\n📍 Processing place ${i + 1}/${placesToProcess.length}: ${place.name}`)
+    const BATCH_SIZE = 1000
+    let offset = 0
+    let hasMore = true
 
-      try {
-        const result = await photoFetcherService.fetchPhotosForPlace(place)
-        this.stats.processedCount++
+    while (hasMore && this.stats.processedCount < placesToProcess) {
+      const { data: places, error } = await getPlacesWithRetry(BATCH_SIZE, offset, effectiveMinScore)
 
-        if (result.success) {
-          this.stats.successCount++
-          this.stats.photosFound += result.photosFound
-        } else {
+      if (error) {
+        console.error('❌ Error fetching places:', error)
+        throw error
+      }
+
+      if (!places || places.length === 0) {
+        break
+      }
+
+      for (let i = 0; i < places.length && this.stats.processedCount < placesToProcess; i++) {
+        const place = places[i] as Place
+        console.log(`\n📍 Processing place ${this.stats.processedCount + 1}/${placesToProcess}: ${place.name}`)
+
+        try {
+          const result = await photoFetcherService.fetchPhotosForPlace(place)
+          this.stats.processedCount++
+
+          if (result.success) {
+            this.stats.successCount++
+            this.stats.photosFound += result.photosFound
+          } else {
+            this.stats.errorCount++
+          }
+
+          if (this.stats.processedCount % 10 === 0) {
+            this.printProgress(placesToProcess)
+          }
+
+          if (i < places.length - 1 && this.stats.processedCount < placesToProcess) {
+            await photoFetcherService.delay()
+          }
+        } catch (error) {
+          this.stats.processedCount++
           this.stats.errorCount++
+          console.error(`❌ Error processing place ${place.name}:`, error)
         }
+      }
 
-        // Print progress every 10 places
-        if ((i + 1) % 10 === 0) {
-          this.printProgress()
-        }
-
-        // Add delay between requests (except for the last one)
-        if (i < placesToProcess.length - 1) {
-          await photoFetcherService.delay()
-        }
-      } catch (error) {
-        this.stats.processedCount++
-        this.stats.errorCount++
-        console.error(`❌ Error processing place ${place.name}:`, error)
+      if (places.length < BATCH_SIZE) {
+        hasMore = false
+      } else {
+        offset += BATCH_SIZE
       }
     }
 
-    // Final summary
     console.log(`\n✅ Photo fetch complete!`)
-    this.printProgress()
+    this.printProgress(placesToProcess)
   }
 }
 

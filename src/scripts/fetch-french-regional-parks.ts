@@ -159,7 +159,11 @@ class FrenchRegionalParksFetcher {
 
     // Use park's ID if available, otherwise generate one
     const sourceId = park.id ? `datagouv:${park.id}` : `datagouv:${name.toLowerCase().replace(/\s+/g, '-')}`
+    const website = properties.website || null
+    const wikipediaQuery = properties.wikipedia || null
 
+    // formatPlaceObject will set correct score for regional_park type
+    // Scores will be recalculated after insert using calculateScore() when needed
     return formatPlaceObject({
       source: 'DATA.GOUV',
       sourceId,
@@ -172,10 +176,8 @@ class FrenchRegionalParksFetcher {
       region: null,
       country: 'France',
       description: properties.description || null,
-      source_score: 8,
-      score: 8,
-      website: properties.website || null,
-      wikipedia_query: properties.wikipedia || null,
+      website,
+      wikipedia_query: wikipediaQuery,
       metadata: {
         ...properties,
         source_url: this.dataUrl,

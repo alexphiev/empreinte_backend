@@ -4,11 +4,17 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
 import { swaggerSpec } from './config/swagger'
-import { analyzePlaceWebsite, analyzePlaceWikipedia } from './controllers/place-analysis.controller'
-import { analyzeUrls } from './controllers/url-analysis.controller'
-import { verifyPlaces } from './controllers/place-verification.controller'
 import { fetchPhotos } from './controllers/photo.controller'
+import {
+  analyzePlaceReddit,
+  analyzePlaceWebsite,
+  analyzePlaceWikipedia,
+  batchAnalyzePlaceWebsites,
+  batchAnalyzePlaceWikipedias,
+} from './controllers/place-analysis.controller'
+import { verifyPlaces } from './controllers/place-verification.controller'
 import { fetchRatings } from './controllers/ratings.controller'
+import { analyzeUrls } from './controllers/url-analysis.controller'
 import { authenticateApiKey } from './middleware/auth.middleware'
 
 const app = express()
@@ -210,6 +216,209 @@ app.post('/api/places/:placeId/analyze', authenticateApiKey, strictLimiter, anal
  *               $ref: '#/components/schemas/Error'
  */
 app.post('/api/places/:placeId/analyze-wikipedia', authenticateApiKey, strictLimiter, analyzePlaceWikipedia)
+
+/**
+ * @swagger
+ * /api/places/{placeId}/analyze-reddit:
+ *   post:
+ *     summary: Analyze a place's Reddit discussions and extract information
+ *     description: |
+ *       Searches Reddit for discussions about a place and uses AI to extract:
+ *       - A detailed description summarizing relevant Reddit discussions
+ *       - Information about the place from real user experiences
+ *
+ *       This operation searches multiple subreddits and uses AI to filter and summarize relevant discussions.
+ *       Results are automatically saved to the database.
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: placeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The UUID of the place to analyze
+ *       - in: query
+ *         name: bypassCache
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: If true, bypasses cached raw data and fetches fresh content (which will overwrite the cache)
+ *     responses:
+ *       200:
+ *         description: Successful analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RedditAnalysisResponse'
+ *       400:
+ *         description: Bad request (invalid ID or place has no name)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Place not found or no Reddit discussions found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error (AI unavailable, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/:placeId/analyze-reddit', authenticateApiKey, strictLimiter, analyzePlaceReddit)
+
+/**
+ * @swagger
+ * /api/places/batch-analyze-websites:
+ *   post:
+ *     summary: Batch analyze multiple places' websites
+ *     description: |
+ *       Analyzes multiple places' websites in batch. Processes places that have a website but haven't been analyzed yet.
+ *       Uses AI to extract:
+ *       - A detailed description (max 2000 characters)
+ *       - A list of mentioned nature places
+ *
+ *       This is a resource-intensive operation with rate limiting (50 requests/hour).
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               limit:
+ *                 type: number
+ *                 description: Maximum number of places to process (optional)
+ *                 example: 10
+ *               bypass:
+ *                 type: boolean
+ *                 description: If true, bypasses cache and re-analyzes all places with websites (optional)
+ *                 default: false
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: Successful batch analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BatchWebsiteAnalysisResponse'
+ *       400:
+ *         description: Bad request (invalid limit)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/batch-analyze-websites', authenticateApiKey, strictLimiter, batchAnalyzePlaceWebsites)
+
+/**
+ * @swagger
+ * /api/places/batch-analyze-wikipedias:
+ *   post:
+ *     summary: Batch analyze multiple places' Wikipedia pages
+ *     description: |
+ *       Analyzes multiple places' Wikipedia pages in batch. Processes places that haven't been analyzed yet.
+ *       Uses AI to extract:
+ *       - A detailed description focused on nature/outdoor features
+ *       - A list of mentioned nature places
+ *
+ *       This is a resource-intensive operation with rate limiting (50 requests/hour).
+ *     tags:
+ *       - Places
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               limit:
+ *                 type: number
+ *                 description: Maximum number of places to process (optional)
+ *                 example: 10
+ *               bypass:
+ *                 type: boolean
+ *                 description: If true, bypasses cache and re-analyzes all places (optional)
+ *                 default: false
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: Successful batch analysis
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BatchWikipediaAnalysisResponse'
+ *       400:
+ *         description: Bad request (invalid limit)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized (missing or invalid API key)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests (rate limit exceeded)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.post('/api/places/batch-analyze-wikipedias', authenticateApiKey, strictLimiter, batchAnalyzePlaceWikipedias)
 
 /**
  * @swagger

@@ -32,40 +32,28 @@ async function main() {
   try {
     const { result, error } = await analyzePlaceWikipediaCore(placeId, { bypassCache: false })
 
-    if (error) {
-      console.error(`❌ ${error}`)
+    if (error || !result) {
+      console.error(`❌ ${error || 'No result returned'}`)
       process.exit(1)
     }
 
-    // Display results
     console.log('\n' + '='.repeat(80))
     console.log('✅ WIKIPEDIA ANALYSIS COMPLETE')
     console.log('='.repeat(80))
 
     console.log('\n📝 Description:')
     console.log('-'.repeat(80))
-    console.log(result.description)
+    console.log(result.description || '(No description available)')
     console.log('-'.repeat(80))
-    console.log(`Length: ${result.description.length} characters`)
+    console.log(`Length: ${result.description?.length || 0} characters`)
 
     if (result.wikipediaReference) {
       console.log(`\n📚 Wikipedia Reference: ${result.wikipediaReference}`)
     }
 
-    console.log('\n📍 Mentioned Places:')
-    console.log('-'.repeat(80))
-    if (result.mentionedPlaces.length === 0) {
-      console.log('(No other places mentioned)')
-    } else {
-      result.mentionedPlaces.forEach((placeName, index) => {
-        console.log(`${index + 1}. ${placeName}`)
-      })
-    }
-    console.log('-'.repeat(80))
-
     console.log('\n✨ Summary:')
-    console.log(`   - Description length: ${result.description.length} chars`)
-    console.log(`   - Mentioned places: ${result.mentionedPlaces.length}`)
+    console.log(`   - Description length: ${result.description?.length || 0} chars`)
+    console.log(`   - Wikipedia data: ${result.wikipediaData ? 'Available' : 'Not available'}`)
 
     console.log('\n✅ Script completed successfully!')
   } catch (error) {
