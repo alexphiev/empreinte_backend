@@ -207,21 +207,15 @@ export async function getExistingPlaces(names: string[]): Promise<string[]> {
  */
 export async function getPlacesForWikipediaAnalysis(
   bypassCache: boolean = false,
-  limit?: number,
+  limit: number = 100,
 ): Promise<PostgrestResponse<{ id: string; name: string | null; wikipedia_analyzed_at: string | null }>> {
   let query = supabase.from('places').select('id, name, wikipedia_analyzed_at')
 
   if (!bypassCache) {
-    // Only get places that haven't been analyzed yet
     query = query.is('wikipedia_analyzed_at', null)
   }
 
-  // Order by score descending to prioritize higher-scored places
-  query = query.order('score', { ascending: false })
-
-  if (limit !== undefined) {
-    query = query.limit(limit)
-  }
+  query = query.limit(limit)
 
   return query
 }

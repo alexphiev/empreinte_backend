@@ -53,60 +53,80 @@ class BatchWikipediaAnalyzer {
       console.log(`🔄 Bypassing cache - will fetch fresh content`)
     }
 
-    // Get places that haven't been analyzed (or all if bypassing)
-    const { data: placesToProcess, error: queryError } = await retryAsync(
-      () => getPlacesForWikipediaAnalysis(this.bypassCache, limit),
-      'Fetch places for Wikipedia analysis',
-    )
+    const BATCH_SIZE = 100
+    let totalProcessed = 0
+    let hasMore = true
 
-    if (queryError) {
-      console.error('❌ Error fetching places:', queryError)
-      throw queryError
-    }
+    while (hasMore) {
+      const batchLimit = limit !== undefined ? Math.min(BATCH_SIZE, limit - totalProcessed) : BATCH_SIZE
 
-    if (!placesToProcess || placesToProcess.length === 0) {
-      console.log('✅ No places to process!')
-      return
-    }
+      if (batchLimit <= 0) {
+        break
+      }
 
-    console.log(`📋 Found ${placesToProcess.length} places to process`)
+      console.log(`\n📦 Fetching batch of ${batchLimit} places...`)
 
-    // Process places one by one
-    for (let i = 0; i < placesToProcess.length; i++) {
-      const place = placesToProcess[i] as Place
-      console.log(`\n📍 Processing place ${i + 1}/${placesToProcess.length}: ${place.name}`)
+      const { data: placesToProcess, error: queryError } = await retryAsync(
+        () => getPlacesForWikipediaAnalysis(this.bypassCache, batchLimit),
+        'Fetch places for Wikipedia analysis',
+      )
 
-      try {
-        const { result, error } = await analyzePlaceWikipediaCore(place.id, { bypassCache: this.bypassCache })
-        this.stats.processedCount++
+      if (queryError) {
+        console.error('❌ Error fetching places:', queryError)
+        throw queryError
+      }
 
-        if (error || !result) {
+      if (!placesToProcess || placesToProcess.length === 0) {
+        console.log('✅ No more places to process!')
+        hasMore = false
+        break
+      }
+
+      console.log(`📋 Processing ${placesToProcess.length} places in this batch`)
+
+      for (let i = 0; i < placesToProcess.length; i++) {
+        const place = placesToProcess[i] as Place
+        console.log(`\n📍 Processing place ${totalProcessed + i + 1}: ${place.name}`)
+
+        try {
+          const { result, error } = await analyzePlaceWikipediaCore(place.id, { bypassCache: this.bypassCache })
+          this.stats.processedCount++
+
+          if (error || !result) {
+            this.stats.errorCount++
+            console.error(`❌ Error: ${error}`)
+          } else {
+            this.stats.successCount++
+            const descLength = result.description?.length || 0
+            const score = result.wikipediaData?.score || 0
+            console.log(`✅ Success: ${descLength} chars, score: ${score}`)
+          }
+
+          if ((this.stats.processedCount) % 10 === 0) {
+            this.printProgress()
+          }
+
+          if (i < placesToProcess.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 500))
+          }
+        } catch (error) {
+          this.stats.processedCount++
           this.stats.errorCount++
-          console.error(`❌ Error: ${error}`)
-        } else {
-          this.stats.successCount++
-          const descLength = result.description?.length || 0
-          const score = result.wikipediaData?.score || 0
-          console.log(`✅ Success: ${descLength} chars, score: ${score}`)
+          console.error(`❌ Fatal error processing place ${place.name}:`, error)
         }
+      }
 
-        // Print progress every 10 places
-        if ((i + 1) % 10 === 0) {
-          this.printProgress()
-        }
+      totalProcessed += placesToProcess.length
 
-        // Add delay between requests (except for the last one)
-        if (i < placesToProcess.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-      } catch (error) {
-        this.stats.processedCount++
-        this.stats.errorCount++
-        console.error(`❌ Fatal error processing place ${place.name}:`, error)
+      if (placesToProcess.length < batchLimit) {
+        hasMore = false
+      }
+
+      if (limit !== undefined && totalProcessed >= limit) {
+        hasMore = false
       }
     }
 
-    // Final summary
     console.log(`\n✅ Batch Wikipedia analysis complete!`)
     this.printProgress()
   }
